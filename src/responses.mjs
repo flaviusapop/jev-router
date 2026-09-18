@@ -40,21 +40,52 @@ export function newTurnPrompt(body) {
   for (const item of [...body.input].reverse()) {
     if (item?.type === "function_call_output" || item?.type === "custom_tool_call_output") return null;
     if (item?.role !== "user") continue;
-    const prompt = cleanPrompt(textOf(item.content));
+    const text = textOf(item.content);
+    // Codex hands a finished sub-agent's result back to its parent as a `user` message rather
+    // than a tool result, so it reaches here looking like something the human typed. It is the
+    // tail of the parent's own turn, already routed; measured 2026-09-19, routing it spent a
+    // second Jev call on machine-written JSON and could move the parent mid-task.
+    if (/<subagent_notification>/i.test(text)) return null;
+    const prompt = cleanPrompt(text);
     if (prompt) return prompt;
   }
   return null;
 }
 
 /**
- * Stable per-conversation id, so a sub-agent and its parent keep separate routing state.
- * `prompt_cache_key` is what both CLIs send per session; the fallback covers a body that
- * predates it.
+ * The conversation a request belongs to, which for these CLIs means the agent: a sub-agent
+ * must not share its parent's routing state, or each would overwrite the other's tier and
+ * each would be told the wrong model its prompt cache was built on.
+ *
+ * `thread_id` is preferred over `prompt_cache_key` because Codex gives a sub-agent its own
+ * thread but leaves the cache key set to the parent's. Measured 2026-09-19: a sub-agent and
+ * its parent shared `01a0b47e-ac01-...` as a cache key while their threads were `...-ac01-...`
+ * and `...-c849-...`. Grok sends no `client_metadata` at all and already gives each agent its
+ * own cache key, so it falls through to the next source untouched.
  */
 export function conversationKey(body) {
+  const meta = body?.client_metadata;
+  // The window id is the thread id with a pane suffix, and is sent on turns that omit `thread_id`.
+  const window = String(meta?.["x-codex-window-id"] ?? "").split(":")[0];
   const stable =
-    body?.prompt_cache_key ??
-    body?.client_metadata?.["x-codex-turn-metadata"] ??
+    meta?.thread_id ||
+    window ||
+    body?.prompt_cache_key ||
+    meta?.["x-codex-turn-metadata"] ||
     `${body?.instructions ?? ""}|${textOf(body?.input?.find((item) => item?.role === "user")?.content)}`;
   return createHash("sha1").update(String(stable)).digest("hex").slice(0, 12);
+}
+
+/**
+ * Whether this request belongs to an agent session at all.
+ *
+ * Both CLIs fire small side requests on the side of a session - Grok asks for a session title
+ * with `tool_choice` pinned to one function and a 100-token cap - and those carry neither a
+ * thread nor a cache key. They are not turns and must not be routed: measured 2026-09-19, a
+ * sub-agent's title call inherited the sentinel and spent a full Jev call, and a routed tier,
+ * on writing a title.
+ */
+export function isAgentSession(body) {
+  const meta = body?.client_metadata;
+  return Boolean(meta?.thread_id || meta?.["x-codex-window-id"] || body?.prompt_cache_key);
 }

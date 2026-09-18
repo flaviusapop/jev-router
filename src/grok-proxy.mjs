@@ -5,7 +5,7 @@ import { brotliDecompressSync, gunzipSync, inflateSync, zstdDecompressSync } fro
 import { AUTO_MODEL, availableTiers, target } from "./config.mjs";
 import { askJev } from "./router.mjs";
 import { decide } from "./policy.mjs";
-import { conversationKey, newTurnPrompt } from "./responses.mjs";
+import { conversationKey, isAgentSession, newTurnPrompt } from "./responses.mjs";
 import { log, announceServedModel } from "./log.mjs";
 
 /**
@@ -98,7 +98,18 @@ export async function startGrokProxy({
           if (process.env.JEV_DUMP) {
             writeFileSync(`${process.env.JEV_DUMP}.${Date.now()}.json`, JSON.stringify(body, null, 2));
           }
-          if (body.model === AUTO_MODEL) {
+          if (body.model === AUTO_MODEL && !isAgentSession(body)) {
+            // A side request wearing the sentinel, because the sentinel is the session's model
+            // and Grok reuses it for its own errands. It still has to name a real model - the
+            // sentinel exists only in Grok's local catalogue, and xAI would reject it - so it
+            // is pinned to the cheapest tier without asking Jev. Measured 2026-09-19: a
+            // sub-agent's `session_title` call was costing a Jev call and a routed tier to
+            // write a 100-token title.
+            const cheapest =
+              availableTiers().find((name) => models.size === 0 || models.has(grokModelOf(name))) ?? "haiku";
+            debug(`grok side request -> ${grokModelOf(cheapest)}, not an agent turn`);
+            applyGrokTier(body, cheapest, models);
+          } else if (body.model === AUTO_MODEL) {
             const key = conversationKey(body);
             const current = states.get(key) ?? "sonnet";
             const prompt = newTurnPrompt(body);

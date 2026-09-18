@@ -343,3 +343,57 @@ test("reads a compressed catalogue, so efforts are clamped against real model da
   // xhigh does not exist on 4.5; without the catalogue it would have gone out unclamped.
   assert.deepEqual(sent.at(-1).reasoning, { effort: "high" });
 });
+
+test("a session_title errand is pinned to the cheapest tier without asking Jev", async (t) => {
+  // Grok fires one of these per agent, sub-agents included, and it inherits the sentinel from
+  // the session. Measured 2026-09-19: routing it spent a Jev call, and a routed tier, on a
+  // 100-token title. It still has to name a real model, because the sentinel exists only in
+  // Grok's local catalogue.
+  const upstream = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      if (req.url === "/v1/models") {
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify(catalogue()));
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(Buffer.concat(chunks));
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => upstream.close());
+
+  let calls = 0;
+  const proxy = await startGrokProxy({
+    baseURL: `http://127.0.0.1:${upstream.address().port}/v1`,
+    route: async () => {
+      calls += 1;
+      return { choice: "fable", confidence: 0.99, probabilities: {} };
+    },
+  });
+  t.after(() => proxy.close());
+  const base = `http://127.0.0.1:${proxy.port}`;
+  await fetch(`${base}/v1/models`);
+
+  const title = await (
+    await fetch(`${base}/v1/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "jev-auto",
+        max_output_tokens: 100,
+        tool_choice: { type: "function", name: "session_title" },
+        tools: [{ type: "function", name: "session_title" }],
+        input: [
+          { type: "message", role: "system", content: "Write a short title." },
+          { type: "message", role: "user", content: "<user_query> Use a subagent </user_query>" },
+        ],
+      }),
+    })
+  ).json();
+
+  assert.equal(calls, 0, "a title errand must not cost a Jev call");
+  assert.equal(title.model, grokTierSpec("haiku").model);
+  assert.notEqual(title.model, "jev-auto", "the sentinel is not a model xAI can serve");
+});

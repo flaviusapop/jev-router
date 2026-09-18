@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 import { AUTO_MODEL, availableTiers, target } from "./config.mjs";
 import { askJev } from "./router.mjs";
 import { decide } from "./policy.mjs";
-import { conversationKey, newTurnPrompt } from "./responses.mjs";
+import { conversationKey, isAgentSession, newTurnPrompt } from "./responses.mjs";
 import { log, announceServedModel } from "./log.mjs";
 
 const CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/codex";
@@ -118,10 +118,21 @@ export async function startCodexProxy({
           if (process.env.JEV_DUMP) {
             writeFileSync(`${process.env.JEV_DUMP}.${Date.now()}.json`, JSON.stringify(body, null, 2));
           }
-          if (body.model === AUTO_MODEL) {
+          if (body.model === AUTO_MODEL && !isAgentSession(body)) {
+            // A side request wearing the sentinel rather than a turn. The sentinel is not a
+            // real model, so it is pinned to the cheapest tier rather than left to be rejected.
+            const cheapest =
+              availableTiers().find((name) => models.size === 0 || models.has(codexModelOf(name))) ?? "haiku";
+            debug(`codex side request -> ${codexModelOf(cheapest)}, not an agent turn`);
+            applyCodexTier(body, cheapest, models);
+          } else if (body.model === AUTO_MODEL) {
             const key = codexConversationKey(body);
             const current = states.get(key) ?? "sonnet";
             const prompt = codexNewTurnPrompt(body);
+            // Codex gives a sub-agent its own thread, so `key` already separates it from its
+            // parent; this only names it in the log, where two interleaved keys are otherwise
+            // hard to tell apart.
+            const subagent = Boolean(body.client_metadata?.["x-openai-subagent"]);
             let tier = current;
             if (prompt) {
               const enabled = availableTiers().filter((name) => models.size === 0 || models.has(codexModelOf(name)));
@@ -131,7 +142,10 @@ export async function startCodexProxy({
               tier = decision.tier;
               states.set(key, tier);
               routing = { tier, confidence: jev?.confidence ?? null, reason: decision.reason };
-              debug(`${key} ${current} -> ${tier} (${decision.reason}) | ${prompt.slice(0, 60)}`);
+              debug(
+                `${key}${subagent ? " subagent" : ""} ${current} -> ${tier} ` +
+                  `(${decision.reason}) | ${prompt.slice(0, 60)}`,
+              );
             }
             applyCodexTier(body, tier, models);
           }

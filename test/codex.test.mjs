@@ -182,6 +182,10 @@ test("proxy preserves Codex auth, picker, routing, and native decision output", 
     headers: { ...headers, "content-type": "application/json" },
     body: JSON.stringify({
       model: "jev-auto",
+      // Every real Codex turn carries these; without them the request is a side errand and is
+      // pinned to the cheapest tier rather than routed.
+      prompt_cache_key: "thread-1",
+      client_metadata: { thread_id: "thread-1" },
       input: [
         { type: "additional_tools", role: "developer", tools: [{}] },
         { role: "user", content: [{ type: "input_text", text: "debug this race" }] },

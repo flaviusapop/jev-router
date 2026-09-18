@@ -142,6 +142,8 @@ Three kinds of request are deliberately not routed:
 | Any model other than `jev-auto` | You chose it. This also covers Claude Code's internal Haiku calls for titles and summaries. |
 | Tool-loop continuations | A turn spans many requests. The tier is chosen once and pinned, so the model cannot change mid-task. |
 | Calls carrying no tools | Auxiliary work, not a user turn. |
+| Calls belonging to no agent session | Codex and Grok fire side errands - a session title, a recap - that inherit the sentinel because it is the session's model. They carry no thread and no cache key, and are pinned to the cheapest tier rather than routed. |
+| A finished sub-agent's handback | Codex returns a sub-agent's result to its parent as a `user` message, not a tool result, so it reads like a fresh turn. It is the tail of a turn already routed. |
 
 Sub-agents are routed, but pinned separately, so a sub-agent's choice cannot leak into the
 main conversation.
@@ -245,6 +247,10 @@ A sub-agent is routed independently of the agent that spawned it, on the text of
 A search sub-agent lands on the cheap tier while its parent is working at the expensive one,
 and a design sub-agent lands on the expensive tier while its parent sits cheap.
 
+All three CLIs spawn them, and each hides the fact somewhere different.
+
+### Claude Code
+
 Claude Code spawns them two different ways, and both are handled:
 
 - **Inheriting the sentinel.** The request arrives as `jev-auto` and routes like any other
@@ -269,6 +275,37 @@ that tier without re-asking Jev, and its choice never leaks into the parent's st
 
 Conversation keys ignore `<system-reminder>` blocks for this reason: Claude Code rewrites them
 between requests, and a key that churns mid-conversation costs a redundant Jev call per turn.
+
+### Codex
+
+Codex sub-agents inherit the sentinel, so they were always routed - but under the *parent's*
+key. Measured 2026-09-19: a `SpawnAgent` turn and the sub-agent it spawned shared
+`prompt_cache_key` `01a0b47e-ac01-...`, so each overwrote the other's tier and each was then
+told its prompt cache had been built on the other's model.
+
+`client_metadata.thread_id` is what actually separates them - the sub-agent's was
+`01a0b47e-c849-...` - so the conversation key is taken from the thread, not the cache key.
+Sub-agent requests also carry `x-openai-subagent`, which is used only to name them in the log:
+
+```
+a15d2d9b0722          sonnet -> haiku | Delegate to a subagent: have it search...
+62ffb5410074 subagent sonnet -> haiku | Search the repository for the definition of...
+```
+
+When the sub-agent finishes, Codex hands its result back to the parent as a `user` message
+wrapped in `<subagent_notification>`. That is a continuation, not a turn, and is not routed.
+A prompt where the *human* mentions sub-agents is untouched.
+
+### Grok
+
+Grok gives each agent its own `prompt_cache_key`, so sub-agents route correctly with no
+special handling. What did need fixing is the errand beside them: Grok asks for a session
+title per agent, sub-agents included, with `tool_choice` pinned to one function and a
+100-token cap. It inherits the sentinel, and was costing a full Jev call and a routed tier to
+write a title. It is now pinned to the cheapest tier instead - it still has to name a real
+model, because the sentinel exists only in Grok's local catalogue.
+
+Grok's own `--no-subagents` still turns the feature off entirely; nothing here overrides it.
 
 ## Compatibility notes
 
