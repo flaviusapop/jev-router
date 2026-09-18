@@ -116,19 +116,27 @@ export function applyTier(body, tierName) {
  * the main agent and each sub-agent.
  */
 /**
- * Session id Claude Code embeds in request metadata, or "" when it isn't present.
- * `metadata.user_id` is a JSON string, not a plain id.
+ * Which session a request belongs to, or "" when nothing says.
+ *
+ * Claude Code puts it in the body, as a JSON string under `metadata.user_id`. opencode puts
+ * it in an `x-session-id` header instead, and - unlike Claude Code - gives every agent its
+ * own, so the header alone separates a sub-agent from the session that spawned it. Measured
+ * 2026-09-18: a `task` spawn ran under `ses_f4b42d493ffe...` while its parent stayed on
+ * `ses_f4b42dee0ffe...`.
  */
-export function sessionOf(body) {
+export function sessionOf(body, headers = {}) {
   try {
-    return JSON.parse(body?.metadata?.user_id ?? "{}").session_id ?? "";
+    const embedded = JSON.parse(body?.metadata?.user_id ?? "{}").session_id;
+    if (embedded) return embedded;
   } catch {
-    return "";
+    // Not JSON, so not Claude Code's; fall through to the header.
   }
+  const header = headers["x-session-id"];
+  return (Array.isArray(header) ? header[0] : header) ?? "";
 }
 
-export function conversationKey(body) {
-  const session = sessionOf(body);
+export function conversationKey(body, headers = {}) {
+  const session = sessionOf(body, headers);
   const content = body?.messages?.[0]?.content;
   const text =
     typeof content === "string"
@@ -211,8 +219,8 @@ export async function startProxy() {
           }
           body.tools?.forEach((t) => sanitizeSchema(t.input_schema));
 
-          const session = sessionOf(body);
-          const key = conversationKey(body);
+          const session = sessionOf(body, req.headers);
+          const key = conversationKey(body, req.headers);
           const prompt = newTurnPrompt(body);
           // A sub-agent names a concrete model but is not a choice the user made, so it is
           // routed like any other conversation. Its tier is kept under its own key, which

@@ -1,7 +1,7 @@
 {
   "name": "@flaviusapop/jev-router",
   "version": "1.0.0",
-  "description": "Runs Claude Code, Codex and Grok, routing each turn to the cheapest model and reasoning depth that can finish it, using TypeSafe Jev",
+  "description": "Runs Claude Code, Codex, Grok and opencode, routing each turn to the cheapest model and reasoning depth that can finish it, using TypeSafe Jev",
   "type": "module",
   "license": "MIT",
   "author": "Flavius Pop",
@@ -16,7 +16,8 @@
   "bin": {
     "jev-claude": "bin/jev-claude.mjs",
     "jev-codex": "bin/jev-codex.mjs",
-    "jev-grok": "bin/jev-grok.mjs"
+    "jev-grok": "bin/jev-grok.mjs",
+    "jev-opencode": "bin/jev-opencode.mjs"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\""
@@ -36,6 +37,7 @@
     "grok",
     "xai",
     "openai",
+    "opencode",
     "model-routing",
     "llm-router",
     "jev",

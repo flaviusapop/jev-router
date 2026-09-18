@@ -2,7 +2,7 @@
 
 ![Jev Router in the Claude Code model picker](docs/model-picker.png)
 
-Automatic model routing for Claude Code, OpenAI Codex and the Grok CLI. Each turn goes to the
+Automatic model routing for Claude Code, OpenAI Codex, the Grok CLI and opencode. Each turn goes to the
 cheapest model **and reasoning depth** that can actually finish it — a typo to the fast tier, an
 unknown-cause bug to the strong one — with the decision made by
 [Jev](https://docs.typesafe.ai), TypeSafe's System One decision model.
@@ -15,12 +15,13 @@ Only the model field on the way past is rewritten.
 
 Requires Node.js 20.12+ and at least one of
 [Claude Code](https://code.claude.com/docs/en/setup),
-[Codex](https://developers.openai.com/codex/cli) or [Grok](https://docs.x.ai/docs/grok-cli).
+[Codex](https://developers.openai.com/codex/cli), [Grok](https://docs.x.ai/docs/grok-cli) or
+[opencode](https://opencode.ai/docs).
 
 ```bash
 npm install -g @flaviusapop/jev-router
 echo "JEV_API_KEY=..." > ~/.jev-router.env
-jev-claude      # or jev-codex, or jev-grok
+jev-claude      # or jev-codex, jev-grok, jev-opencode
 ```
 
 On Windows PowerShell, create the environment file with:
@@ -304,6 +305,45 @@ model, because the sentinel exists only in Grok's local catalogue.
 
 Grok's own `--no-subagents` still turns the feature off entirely; nothing here overrides it.
 
+### opencode
+
+opencode speaks the Anthropic Messages API through its `anthropic` provider, so the same proxy
+that serves Claude Code serves it unchanged. `jev-opencode` starts that proxy and points
+opencode at it through `OPENCODE_CONFIG`, which **merges** over your own configuration rather
+than replacing it - an MCP server you configured globally is still there. Nothing of yours is
+written to, and there is nothing to put back when the session ends.
+
+The sentinel is declared as a model beside the real ones, because opencode takes its catalogue
+from models.dev, which has never heard of `jev-auto`:
+
+```json
+{
+  "model": "anthropic/jev-auto",
+  "provider": {
+    "anthropic": {
+      "options": { "baseURL": "http://127.0.0.1:PORT/v1" },
+      "models": { "jev-auto": { "name": "Jev Router", "tool_call": true, "reasoning": true } }
+    }
+  }
+}
+```
+
+Its declared context and output limits are deliberately the smallest any tier can serve.
+opencode composes `max_tokens` from whatever the chosen model declares, so claiming Opus's
+window and then routing a turn down to Haiku would be a hard 400 on the way out.
+
+Sub-agents needed no special handling at all: opencode gives **every agent its own session**
+and sends it as an `x-session-id` header, so a `task` spawn is a different conversation by
+construction. Measured 2026-09-18 on opencode 1.18.29:
+
+```
+passthrough, user selected claude-haiku-4-5-20251001   <- the title agent, never routed
+20129121b242 698ms p=0.69 sonnet -> haiku | "Use the task tool to spawn a subagent...
+6af1ee1034a8 298ms p=1.00 sonnet -> haiku | Read the file probe.txt from the current...
+```
+
+`small_model` is left alone. opencode uses it for titles and summaries, those requests carry
+no tools, and a call with no tools is never routed.
 ## Compatibility notes
 
 Three things the proxy has to handle, none of them documented:
