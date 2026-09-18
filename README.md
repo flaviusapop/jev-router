@@ -418,7 +418,7 @@ npm install
 echo "JEV_API_KEY=..." > .env
 
 npm test                     # 96 offline tests
-node test/live-routing.mjs   # real Jev calls across four difficulty tiers
+node scripts/live-routing.mjs   # real Jev calls across four difficulty tiers
 node bin/jev-claude.mjs -p "what is 2+2?"
 
 npm link                     # try the globally installed form
