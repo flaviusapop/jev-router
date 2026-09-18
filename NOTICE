@@ -2,6 +2,10 @@ This project began as a fork of jev-router by Pratyush Garg
 (https://github.com/gargpratyush/jev-router), used under the MIT License, and
 has since developed independently.
 
+Upstream's copyright notice, retained as the MIT License requires:
+
+  Copyright (c) 2026 Jev Router contributors
+
 What came from upstream: the idea of putting a local proxy in front of a
 coding CLI, swapping the model on the way past, and asking TypeSafe Jev which
 one to use. The first working versions of the Claude Code and Codex proxies
