@@ -68,29 +68,82 @@ CLIs, length-hint stripping and the override vocabulary were built here. See
 
 ## Using it
 
-Sessions start on a **Jev Router** entry added to the `/model` picker
-([pictured above](docs/model-picker.png)). While it is selected,
-every turn is routed. Pick any other model and routing stands down entirely: your choice goes
-to the API untouched and Jev is not consulted. Reselect Jev Router to resume routing
-mid-session.
+Start whichever CLI you already use. Everything else about it is unchanged.
 
-A status line shows which mode you are in and what the last turn actually used:
+```bash
+jev-claude      # Claude Code
+jev-codex       # OpenAI Codex
+jev-grok        # Grok CLI
+jev-opencode    # opencode
+```
+
+Each turn is then routed on its own: a typo goes to the cheap tier, an unknown-cause bug to
+the strong one. Arguments are passed straight through, so `jev-codex exec "..."`,
+`jev-grok -p "..."` and `jev-opencode run "..."` all work as usual.
+
+### Choosing the model yourself
+
+Three ways, in order of how long they last.
+
+**For one turn** — name a tier or a model in the prompt. Jev is skipped:
+
+```
+use opus: why does this reconnect loop drop messages?
+switch to haiku and fix the typo in README
+use claude-opus-5 for this
+run this on the fast tier
+```
+
+Recognised names are `haiku`, `sonnet`, `opus`, `fable`, any real model id, and `fast`,
+`balanced`, `strong`, `cheap`, `long` or `deep` when followed by "tier" or "model". Ordinary
+English is left alone: `replace the int with long` is not a model choice.
+
+**For the rest of the session** — pick a model in the CLI itself (`/model` in Claude Code and
+Codex). Routing stands down for that conversation and your choice goes to the API untouched.
+Sub-agents it spawns are still routed. Reselect **Jev Router** to resume.
+
+**For every session** — pass a model on the command line, and nothing is routed at all:
+
+```bash
+jev-claude --model claude-opus-5
+```
+
+### Seeing what actually happened
+
+Every CLI's UI shows the model it *asked* for, never the one the proxy routed to. Two ways to
+see the truth:
+
+```bash
+JEV_DEBUG=1 jev-claude     # decisions, and the model the API says it served
+```
+
+In Claude Code there is also a status line:
 
 ```
 ⚡ haiku p=0.98 · my-project · 8% context        routed, Jev confidence 0.98
 ⏸ manual Opus 4.6 · my-project · 21% context     your own choice
 ```
 
-This matters because Claude Code's own UI reports the model it *requested*, not the one the
-proxy routed to. It has no way to know the request was rewritten.
+It is installed with `--settings`, which merges rather than replaces: if you already have a
+`statusLine`, yours is kept. `JEV_NO_STATUSLINE=1` turns it off. In interactive mode the log
+goes to `~/.jev-claude.log`; with `-p` or `run` it goes to stderr.
 
-The status line is installed with `--settings`, which merges rather than replaces. If you
-already have a `statusLine` configured, yours is kept and nothing is injected. Set
-`JEV_NO_STATUSLINE=1` to disable it.
+### Changing what a tier means
 
-> Choosing any row with `Enter` makes Claude Code save it as your default for new sessions.
-> `jev-claude` restores your previous default on exit, so a saved `jev-auto` can never break
-> plain `claude`. Press `s` instead to switch for the current session only.
+Every model and every effort is overridable, per supplier:
+
+```bash
+JEV_CLAUDE_STRONG_MODEL=claude-opus-4-1   # what the strong tier runs
+JEV_GROK_FAST_EFFORT=high                 # how hard the cheap tier thinks
+JEV_DISABLE_TIERS=fable                   # never route here at all
+```
+
+Tier stems are `FAST`, `BALANCED`, `STRONG`, `LONG`. Put them in `~/.jev-router.env` beside
+your key to make them permanent.
+
+> In Claude Code and Codex, choosing a row with `Enter` saves it as your default for new
+> sessions. `jev-claude` restores your previous default on exit, so a saved `jev-auto` can
+> never break plain `claude`. Press `s` to switch for this session only.
 
 ## How it works
 

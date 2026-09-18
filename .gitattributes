@@ -1,0 +1,5 @@
+# The repository stores text as LF. Without this, a clone on Windows commits CRLF back into
+# the blobs, and a CRLF shebang makes every bin script unrunnable on Linux and macOS:
+# `/usr/bin/env node\r` is not an interpreter anyone has.
+* text=auto eol=lf
+*.png binary
