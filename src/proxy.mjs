@@ -2,7 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { tierOf, idOf, availableTiers, tierSpec, isAuto } from "./config.mjs";
+import { idOf, availableTiers, tierSpec, isAuto } from "./config.mjs";
 import { askJev } from "./router.mjs";
 import { decide } from "./policy.mjs";
 import { log, announceServedModel } from "./log.mjs";
@@ -145,19 +145,6 @@ export function conversationKey(body) {
   const stable = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
   return createHash("sha1").update(`${session}|${stable}`).digest("hex").slice(0, 12);
 }
-
-/**
- * Records the tier Claude Code is asking for and reports whether the user has taken manual
- * control. The first tier seen in a conversation is the baseline; any later change means the
- * user picked a model with /model, and an explicit choice must beat the router. Compared by
- * tier rather than exact model id, because Claude Code varies the id within a tier.
- */
-export function observeModel(state, current) {
-  state.baseline ??= current;
-  if (current !== state.baseline) state.manual = true;
-  return state.manual;
-}
-
 
 /**
  * Whether a request naming a concrete model is a sub-agent Claude Code just spawned, rather

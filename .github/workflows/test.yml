@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # The launchers resolve the CLI binary differently per platform - .ps1 and .cmd shims on
+    # Windows, a plain executable elsewhere - so all three are worth running.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      # The suite never reaches a supplier or Jev: every test stands up its own local upstream
+      # and passes a stub router in, so no key is needed and nothing is billed.
+      - run: npm test

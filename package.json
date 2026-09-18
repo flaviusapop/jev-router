@@ -1,8 +1,18 @@
 {
-  "name": "jev-router",
-  "version": "0.1.0",
-  "description": "Runs Claude Code, Codex and Grok, routing each turn to the cheapest sufficient model using TypeSafe Jev",
+  "name": "@flaviusapop/jev-router",
+  "version": "1.0.0",
+  "description": "Runs Claude Code, Codex and Grok, routing each turn to the cheapest model and reasoning depth that can finish it, using TypeSafe Jev",
   "type": "module",
+  "license": "MIT",
+  "author": "Flavius Pop",
+  "homepage": "https://github.com/flaviusapop/jev-router#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flaviusapop/jev-router.git"
+  },
+  "bugs": {
+    "url": "https://github.com/flaviusapop/jev-router/issues"
+  },
   "bin": {
     "jev-claude": "bin/jev-claude.mjs",
     "jev-codex": "bin/jev-codex.mjs",
@@ -14,22 +24,30 @@
   "files": [
     "bin",
     "src",
-    "README.md"
+    "docs",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "keywords": [
     "claude",
     "claude-code",
     "codex",
+    "grok",
+    "xai",
+    "openai",
     "model-routing",
+    "llm-router",
     "jev",
     "typesafe",
-    "grok",
-    "xai"
+    "cost-optimization"
   ],
   "engines": {
     "node": ">=20.12"
   },
-  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0"
   }

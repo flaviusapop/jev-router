@@ -141,16 +141,45 @@ export const THRESHOLDS = {
   jevMaxRetries: 1,
 };
 
-/** Phrases that mean "the human already decided", checked against the raw prompt. */
+/**
+ * Phrases that mean "the human already decided", checked against the raw prompt.
+ *
+ * Two vocabularies, because they carry very different risk. `NAMED` words are model and tier
+ * ids that mean nothing else in a coding prompt, so they match on their own. `GENERIC` words
+ * are ordinary English and must be followed by "tier" or "model" to count. Without that
+ * guard, measured on 2026-09-19: `replace the int with long` reached for the deepest and most
+ * expensive tier, `use strong typing here` reached for the strong model, and `the handler
+ * runs on fast paths` quietly downgraded hard work to the cheap one.
+ *
+ * A named word may carry a whole model id around it, so `use claude-opus-5` and
+ * `switch to gpt-5.6-sol` are read as the tier that model belongs to.
+ */
+const NAMED = {
+  haiku: "haiku|luna",
+  sonnet: "sonnet|terra",
+  opus: "opus|sol",
+  fable: "fable|astra",
+};
+
+const GENERIC = {
+  haiku: "fast|cheap",
+  sonnet: "balanced",
+  opus: "strong",
+  fable: "long|deep",
+};
+
+/** What a model id wraps around a name: `claude-` + `opus` + `-5`. */
+const ID_PREFIX = String.raw`(?:[a-z0-9.]+-)*`;
+const ID_SUFFIX = String.raw`(?:[-.][a-z0-9.\[\]]+)*`;
+
 export const OVERRIDE_PATTERNS = TIERS.map((t) => ({
   tier: t.name,
   re: new RegExp(
-    `\\b(?:use|switch to|with|on)\\s+(?:${{
-      haiku: "haiku|fast|luna",
-      sonnet: "sonnet|balanced|terra",
-      opus: "opus|strong|sol",
-      fable: "fable|long|astra|deep",
-    }[t.name]})\\b`,
+    String.raw`\b(?:use|switch to|with|on)\s+(?:the\s+)?(?:` +
+      `${ID_PREFIX}(?:${NAMED[t.name]})${ID_SUFFIX}` +
+      "|" +
+      String.raw`(?:${GENERIC[t.name]})\s+(?:tier|model)` +
+      String.raw`)\b`,
     "i",
   ),
 }));

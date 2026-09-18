@@ -24,7 +24,10 @@ test("an explicit user override beats Jev", () => {
 test("detectOverride only fires on a real instruction", () => {
   assert.equal(detectOverride("switch to opus"), "opus");
   assert.equal(detectOverride("use luna"), "haiku");
-  assert.equal(detectOverride("use strong"), "opus");
+  // A bare adjective is ordinary English and no longer counts on its own; naming what it
+  // describes does. Full coverage of both vocabularies lives in override.test.mjs.
+  assert.equal(detectOverride("use strong"), null);
+  assert.equal(detectOverride("use the strong model"), "opus");
   assert.equal(detectOverride("the opus of his career"), null);
 });
 

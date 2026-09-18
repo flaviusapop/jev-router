@@ -1,0 +1,22 @@
+This project began as a fork of jev-router by Pratyush Garg
+(https://github.com/gargpratyush/jev-router), used under the MIT License, and
+has since developed independently.
+
+What came from upstream: the idea of putting a local proxy in front of a
+coding CLI, swapping the model on the way past, and asking TypeSafe Jev which
+one to use. The first working versions of the Claude Code and Codex proxies
+were theirs.
+
+What was rewritten or added here:
+
+  - Grok as a third supplier, including its model catalogue, config sentinel
+    registration and cache handling.
+  - Tiers as (model, effort) pairs rather than models alone, so the top tier
+    is the strong model thinking longer rather than a costlier model.
+  - Sub-agent routing across all three CLIs, each of which hides the fact
+    somewhere different.
+  - Length-hint stripping, so "answer in one sentence" cannot cost a tier.
+  - Explicit-override detection anchored to model and tier names rather than
+    to ordinary English.
+
+Upstream continues separately and is not affiliated with this project.

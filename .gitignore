@@ -1,4 +1,11 @@
 node_modules/
 
+# Never commit a key. The router reads JEV_API_KEY from ~/.jev-router.env, outside the repo.
 .env
+.env.*
+*.env
+.jev-router.env
 
+# Debug artefacts: JEV_DUMP writes raw request bodies, which contain your prompts and code.
+*.dump.json
+jev-dump*

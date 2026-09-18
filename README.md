@@ -1,80 +1,69 @@
-# jev-router (43% less ⬇️ tokens consumption for Claude Code)
+# jev-router
 
 ![Jev Router in the Claude Code model picker](docs/model-picker.png)
 
-Automatic model routing for Claude Code, OpenAI Codex and the Grok CLI. Each turn goes to the cheapest model that can
-actually handle it — trivial edits to the fast tier, hard debugging to the strong tier — with the decision made
-by [Jev](https://docs.typesafe.ai), TypeSafe's System One decision model.
+Automatic model routing for Claude Code, OpenAI Codex and the Grok CLI. Each turn goes to the
+cheapest model **and reasoning depth** that can actually finish it — a typo to the fast tier, an
+unknown-cause bug to the strong one — with the decision made by
+[Jev](https://docs.typesafe.ai), TypeSafe's System One decision model.
 
-It runs the real Claude Code CLI. The interface, keybindings, tools, permission prompts,
-`/compact`, `/resume` and session handling are unchanged, because they are still Claude
-Code's.
+It runs the real CLI in every case. The interface, keybindings, tools, permission prompts,
+`/compact`, `/resume` and session handling are unchanged, because they are still the CLI's own.
+Only the model field on the way past is rewritten.
 
 ## Quick start
 
-Requires [Claude Code](https://code.claude.com/docs/en/setup) and Node.js 20.12+.
+Requires Node.js 20.12+ and at least one of
+[Claude Code](https://code.claude.com/docs/en/setup),
+[Codex](https://developers.openai.com/codex/cli) or [Grok](https://docs.x.ai/docs/grok-cli).
 
 ```bash
-git clone https://github.com/gargpratyush/jev-router.git
-cd jev-router
-npm install
-npm link
-echo "JEV_API_KEY=..." > ~/.jev-claude.env
-jev-claude
+npm install -g @flaviusapop/jev-router
+echo "JEV_API_KEY=..." > ~/.jev-router.env
+jev-claude      # or jev-codex, or jev-grok
 ```
 
 On Windows PowerShell, create the environment file with:
 
 ```powershell
-Set-Content "$HOME\.jev-claude.env" "JEV_API_KEY=..."
+Set-Content "$HOME\.jev-router.env" "JEV_API_KEY=..."
 ```
 
-`npm link` makes the `jev-claude` command available globally, so after this one-time setup
-you can run `jev-claude` from any repository. The home-level environment file is also loaded
-regardless of which repository you run it from. Without `npm link`, run
-`node bin/jev-claude.mjs` from the cloned directory.
+Get a key from [TypeSafe](https://docs.typesafe.ai) for free. No supplier API key is needed:
+each launcher reuses the login the real CLI already has, so a Claude Pro or Max, ChatGPT or
+SuperGrok subscription works as-is. Without a Jev key you simply get the plain CLI.
 
-Get a key from [TypeSafe](https://docs.typesafe.ai) for free. The npm package is not published
-yet, so the repository is run directly with Node.js. No `ANTHROPIC_API_KEY` is needed:
-`jev-claude` reuses your existing `claude login`, so a Claude Pro or Max subscription works
-as-is. Without a Jev key you simply get plain Claude Code.
-
-Every argument is forwarded to `claude`, so `jev-claude -p "..."`, `jev-claude --resume` and
-the rest behave exactly as you expect.
-
-For Codex, keep your existing `codex login` and run:
+To run from a clone instead:
 
 ```bash
-jev-codex
+git clone https://github.com/flaviusapop/jev-router.git
+cd jev-router
+npm install
+npm link
 ```
 
-`jev-codex` launches the real Codex CLI with a temporary **Jev Router** provider. It reuses
-Codex's own ChatGPT subscription or API-key authentication; Jev never reads or stores the
-credential. The native `/model` picker includes **Jev Router** alongside the models available
-to your account. Selecting another model pauses routing, and selecting **Jev Router** resumes it.
-Each fresh Jev decision appears in Codex as a commentary line before the model's response.
-If Jev is unavailable, the line names the fallback model and points to
-`~/.jev-router.env`, where `JEV_API_KEY=...` should be set before restarting `jev-codex`.
+## How your credentials are handled
 
-For Grok, keep your existing `grok login` and run:
+Each launcher starts a proxy on `127.0.0.1` on a random port and points the CLI at it for the
+length of the session. Your supplier token therefore passes through this process on its way
+upstream. It is forwarded verbatim and never read, stored or logged, and the proxy accepts
+connections from localhost only. The one field rewritten on a request is the model, plus the
+reasoning effort that goes with it.
 
-```bash
-jev-grok
-```
+Two things do leave your machine, and only these: the text of each new user turn is sent to
+Jev to be classified, and the request itself goes to the supplier it was always going to.
+`JEV_DEBUG=1` logs decisions locally, and `JEV_DUMP` writes whole request bodies to disk —
+useful for debugging, but they contain your prompts and code, so treat those files
+accordingly.
 
-`jev-grok` launches the real Grok CLI against a loopback chat proxy, reusing the session
-credential Grok already holds; Jev never reads or stores it. Grok resolves model ids against
-its own catalogue and discards one it does not recognise, so the sentinel is registered the
-documented way instead: a `[model.jev-auto]` block is added to `~/.grok/config.toml` before
-the CLI starts and removed again on exit, including after Ctrl-C. Everything else in that
-file is preserved byte for byte. Naming a model yourself (`jev-grok -m grok-4.6`) passes it
-straight through and routes nothing.
+## Provenance
 
-Grok exposes two models that both take a reasoning effort, so a tier there is a model *and*
-an effort rather than a model alone, and routing down a tier can mean the same model thinking
-less. The ladder is `grok-4.5` at low effort, `grok-4.5` at high, `grok-4.6` at high, then
-`grok-4.6` at extra-high for the opt-in long tier. Grok's TUI has no status line hook, so
-each decision is written to `~/.jev-claude.log` instead.
+This project began as a fork of [jev-router by Pratyush
+Garg](https://github.com/gargpratyush/jev-router), MIT licensed, and now develops
+independently. Upstream contributed the idea and the first working Claude Code and Codex
+proxies; Grok support, tiers as (model, effort) pairs, sub-agent routing across all three
+CLIs, length-hint stripping and the override vocabulary were built here. See
+[NOTICE](NOTICE). Upstream is not affiliated with this project.
 
 ## Using it
 
@@ -379,12 +368,14 @@ Opus.
   whole session cheap.
 - Under the Grok sentinel the system prompt Grok builds says "Grok 4.6" whichever model the
   turn is finally routed to, because the CLI composes it before the proxy sees the request.
-- Developed and tested on Windows against Claude Code v2.1.101 and Grok CLI v1.0.34.
+- Developed on Windows against Claude Code v2.1.101, Codex v0.60.0 and Grok CLI v1.0.34.
+  CI runs the suite on Linux, macOS and Windows against Node 20, 22 and 24; the suite
+  stands up its own local upstreams, so it never reaches a supplier or Jev.
 
 ## Contributing
 
-Issues and pull requests are welcome. Use [Issues](https://github.com/gargpratyush/jev-router/issues)
-to report bugs, request improvements, or ask questions. Please include the relevant Claude Code
+Issues and pull requests are welcome. Use [Issues](https://github.com/flaviusapop/jev-router/issues)
+to report bugs, request improvements, or ask questions. Please include the CLI and its
 version, reproduction steps, expected behavior, and any useful logs with secrets removed.
 
 For a pull request:
