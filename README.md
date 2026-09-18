@@ -13,7 +13,7 @@ Only the model field on the way past is rewritten.
 
 ## Quick start
 
-Requires Node.js 20.12+ and at least one of
+Requires Node.js 22+ and at least one of
 [Claude Code](https://code.claude.com/docs/en/setup),
 [Codex](https://developers.openai.com/codex/cli), [Grok](https://docs.x.ai/docs/grok-cli) or
 [opencode](https://opencode.ai/docs).
@@ -462,7 +462,7 @@ Opus.
 - Under the Grok sentinel the system prompt Grok builds says "Grok 4.6" whichever model the
   turn is finally routed to, because the CLI composes it before the proxy sees the request.
 - Developed on Windows against Claude Code v2.1.101, Codex v0.60.0 and Grok CLI v1.0.34.
-  CI runs the suite on Linux, macOS and Windows against Node 20, 22 and 24; the suite
+  CI runs the suite on Linux, macOS and Windows against Node 22 and 24; the suite
   stands up its own local upstreams, so it never reaches a supplier or Jev.
 
 ## Contributing

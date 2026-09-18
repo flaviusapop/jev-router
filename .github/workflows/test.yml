@@ -14,7 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [20, 22, 24]
+        # Node 20 is end of life and cannot load the Grok proxy: `zstdDecompressSync`
+        # arrived in Node 22, and Grok serves its model catalogue zstd-encoded.
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
