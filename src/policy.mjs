@@ -1,5 +1,40 @@
 import { TIER_NAMES, THRESHOLDS, OVERRIDE_PATTERNS, rankOf } from "./config.mjs";
 
+/**
+ * How short the reply should be, which says nothing about how hard the question is. Jev is
+ * told to ignore these (see `QUESTIONS` in config.mjs) and mostly does, but the instruction
+ * does not always win: measured on 2026-09-18, appending "One paragraph." to a dispatcher
+ * design question moved it from opus 0.54 to sonnet 0.37 — a full tier, for four words that
+ * changed nothing about the thinking required. Removing them beats arguing with them.
+ *
+ * Each pattern is anchored to a directive, not to the words alone, so "return one line per
+ * row" and "a brief history of the auth module" survive: a hint only matches as its own
+ * clause or at the very end, which is where an instruction to the model actually lives.
+ */
+const LENGTH_HINTS = [
+  /(?:^|[.,;—-]\s*)(?:please\s+)?(?:answer|reply|respond|explain|describe|summari[sz]e)\s+(?:me\s+)?(?:in|with|using)\s+(?:just\s+|only\s+|no\s+more\s+than\s+|at\s+most\s+|under\s+)?(?:a\s+|one\s+|two\s+|three\s+|\d+\s+)?(?:short\s+|single\s+|brief\s+)?(?:words?|lines?|sentences?|paragraphs?|bullets?)\b[^.]*\.?/gi,
+  /(?:^|[.,;—-]\s*)(?:in|keep\s+it\s+to|no\s+more\s+than|at\s+most|under|max(?:imum)?(?:\s+of)?)\s+(?:a\s+|one\s+|two\s+|three\s+|\d+\s+)(?:short\s+|single\s+|brief\s+)?(?:words?|lines?|sentences?|paragraphs?|bullets?)\b[^.]*\.?/gi,
+  /(?:^|[.,;—-]\s*)(?:one|a\s+single|two|three|\d+)\s+(?:short\s+|brief\s+)?(?:words?|lines?|sentences?|paragraphs?|bullets?)\s*(?:only|max|maximum)?\s*\.?\s*$/gi,
+  /(?:^|[.,;—-]\s*)(?:please\s+)?(?:be\s+(?:brief|concise|short|terse)|keep\s+it\s+(?:brief|concise|short|terse)|briefly|concisely|tl;?dr|short\s+answer|in\s+short)\b[^.]*\.?/gi,
+  // A count of units trailing the real request ("...name the cause in one sentence"), which the
+  // patterns above miss because the hint starts mid-clause rather than after a delimiter. Only
+  // "in", and only at the very end: "split the CSV into 3 lines" is the work, not the reply.
+  /\s+in\s+(?:no\s+more\s+than\s+|at\s+most\s+|under\s+|about\s+|around\s+|roughly\s+)?(?:a|one|two|three|\d+)\s+(?:short\s+|single\s+|brief\s+)?(?:words?|lines?|sentences?|paragraphs?|bullets?)\s*(?:only|max|maximum)?\s*\.?\s*$/gi,
+];
+
+/**
+ * The prompt as Jev should see it: the work, without instructions about the shape of the
+ * reply. Returns the original whenever stripping would leave nothing meaningful behind, so a
+ * prompt that is *only* a length instruction is still judged on something.
+ */
+export function stripLengthHints(prompt) {
+  if (typeof prompt !== "string" || !prompt) return prompt;
+  let out = prompt;
+  for (const re of LENGTH_HINTS) out = out.replace(re, " ");
+  out = out.replace(/\s+/g, " ").replace(/\s+([.,;!?])/g, "$1").trim();
+  return out.length >= 8 ? out : prompt;
+}
+
 /** The tier the user named explicitly in the prompt, or null. */
 export function detectOverride(prompt) {
   const hit = OVERRIDE_PATTERNS.find((p) => p.re.test(prompt ?? ""));

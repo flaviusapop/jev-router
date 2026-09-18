@@ -2,62 +2,29 @@ import http from "node:http";
 import https from "node:https";
 import { createHash, randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { AUTO_MODEL, availableTiers } from "./config.mjs";
+import { AUTO_MODEL, availableTiers, target } from "./config.mjs";
 import { askJev } from "./router.mjs";
 import { decide } from "./policy.mjs";
-import { log } from "./log.mjs";
+import { conversationKey, newTurnPrompt } from "./responses.mjs";
+import { log, announceServedModel } from "./log.mjs";
 
 const CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/codex";
 const API_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_MODELS = {
-  haiku: "gpt-5.6-luna",
-  sonnet: "gpt-5.6-terra",
-  opus: "gpt-5.6-sol",
-  fable: "gpt-6-astra",
-};
-const MODEL_ENV = {
-  haiku: "JEV_CODEX_FAST_MODEL",
-  sonnet: "JEV_CODEX_BALANCED_MODEL",
-  opus: "JEV_CODEX_STRONG_MODEL",
-  fable: "JEV_CODEX_LONG_MODEL",
-};
+/**
+ * Codex tiers live in `config.mjs` alongside Claude's and Grok's, so the whole ladder is
+ * visible in one table. `JEV_CODEX_*_MODEL` and `JEV_CODEX_*_EFFORT` override any entry.
+ */
+export const codexTierSpec = (tier) => target("codex", tier);
 
-export const codexModelOf = (tier) => process.env[MODEL_ENV[tier]] ?? DEFAULT_MODELS[tier];
+export const codexModelOf = (tier) => codexTierSpec(tier)?.id;
 
-const textOf = (content) => {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((item) => item?.type === "text" || item?.type === "input_text")
-    .map((item) => item.text)
-    .join("\n");
-};
-
-const cleanPrompt = (text) =>
-  text
-    .replace(/<system[-_]reminder>[\s\S]*?<\/system[-_]reminder>/gi, "")
-    .replace(/<current_datetime>[\s\S]*?<\/current_datetime>/gi, "")
-    .trim();
-
-/** User text that starts a new Codex turn, or null for tool continuations. */
-export function codexNewTurnPrompt(body) {
-  if (!Array.isArray(body?.input)) return null;
-  for (const item of [...body.input].reverse()) {
-    if (item?.type === "function_call_output" || item?.type === "custom_tool_call_output") return null;
-    if (item?.role !== "user") continue;
-    const prompt = cleanPrompt(textOf(item.content));
-    if (prompt) return prompt;
-  }
-  return null;
-}
-
-export function codexConversationKey(body) {
-  const stable =
-    body?.prompt_cache_key ??
-    body?.client_metadata?.["x-codex-turn-metadata"] ??
-    `${body?.instructions ?? ""}|${textOf(body?.input?.find((item) => item?.role === "user")?.content)}`;
-  return createHash("sha1").update(String(stable)).digest("hex").slice(0, 12);
-}
+/**
+ * Codex and Grok speak the same Responses API, so turn detection and conversation identity
+ * live in one place. The old names stay exported because they are part of this module's
+ * surface.
+ */
+export const codexNewTurnPrompt = newTurnPrompt;
+export const codexConversationKey = conversationKey;
 
 export function addJevModel(catalog) {
   if (!Array.isArray(catalog?.models) || catalog.models.some((model) => model.slug === AUTO_MODEL)) {
@@ -82,13 +49,17 @@ export function addJevModel(catalog) {
 }
 
 export function applyCodexTier(body, tier, models = new Map()) {
-  const model = codexModelOf(tier);
-  body.model = model;
-  const info = models.get(model);
+  const spec = codexTierSpec(tier);
+  if (!spec) return body;
+  body.model = spec.id;
+  const info = models.get(spec.id);
   const efforts = info?.supported_reasoning_levels?.map((level) => level.effort);
-  if (body.reasoning?.effort && efforts?.length && !efforts.includes(body.reasoning.effort)) {
-    body.reasoning.effort = info.default_reasoning_level;
-  }
+  // The tier's effort is what should go out; the catalogue only gets a say when the target
+  // model does not offer that level, in which case its own default is the safe landing spot.
+  const wanted = spec.effort ?? body.reasoning?.effort;
+  if (!wanted) return body;
+  const final = efforts?.length && !efforts.includes(wanted) ? info.default_reasoning_level : wanted;
+  body.reasoning = { ...(body.reasoning ?? {}), effort: final };
   return body;
 }
 
@@ -100,7 +71,10 @@ export const upstreamFor = (
 ) => /\/models(?:\?|$)/.test(path) || headers["chatgpt-account-id"] ? chatgptBaseURL : apiBaseURL;
 
 export function jevDecisionEvents({ tier, confidence, reason }) {
-  const model = codexModelOf(tier);
+  const spec = codexTierSpec(tier);
+  // The strong and long tiers share a model and differ only in depth, so the effort has to be
+  // named for the line to mean anything.
+  const model = spec?.effort ? `${spec.id} at ${spec.effort} effort` : spec?.id;
   const detail = confidence == null ? reason : `${reason}, confidence ${confidence.toFixed(2)}`;
   const id = `jev-${randomUUID()}`;
   const text = reason.startsWith("jev-unavailable")
@@ -181,6 +155,7 @@ export async function startCodexProxy({
           headers,
         },
         (response) => {
+          announceServedModel(response, "codex", response.statusCode);
           const responseHeaders = { ...response.headers };
           const isModels = req.method === "GET" && /\/models(?:\?|$)/.test(req.url ?? "");
           if (isModels) {

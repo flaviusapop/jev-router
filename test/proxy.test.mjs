@@ -147,7 +147,7 @@ test("routing to haiku keeps context-management strategies unrelated to thinking
   assert.deepEqual(body.context_management, { edits: [{ type: "clear_tool_uses_20250919" }] });
 });
 
-test("routing to opus leaves thinking and effort intact", () => {
+test("routing sets the tier's effort, overriding whatever the CLI asked for", () => {
   const body = {
     model: "claude-sonnet-4-6",
     thinking: { type: "adaptive" },
@@ -156,7 +156,29 @@ test("routing to opus leaves thinking and effort intact", () => {
   applyTier(body, "opus");
   assert.equal(body.model, "claude-opus-5");
   assert.deepEqual(body.thinking, { type: "adaptive" });
-  assert.deepEqual(body.output_config, { effort: "medium" });
+  assert.deepEqual(body.output_config, { effort: "high" });
+});
+
+test("the long tier is the strong model thinking harder, not a costlier model", () => {
+  const body = { model: "jev-auto", thinking: { type: "adaptive" } };
+  applyTier(body, "fable");
+  assert.equal(body.model, "claude-opus-5");
+  // No effort in the request at all, so one has to be added for the tier to mean anything.
+  assert.deepEqual(body.output_config, { effort: "xhigh" });
+});
+
+test("other output_config settings survive the effort being set", () => {
+  const body = { model: "jev-auto", output_config: { format: { type: "json_schema" } } };
+  applyTier(body, "sonnet");
+  assert.deepEqual(body.output_config, { format: { type: "json_schema" }, effort: "high" });
+});
+
+test("effort is stripped for Haiku, which rejects it outright", () => {
+  const body = { model: "jev-auto", output_config: { effort: "high" } };
+  applyTier(body, "haiku");
+  assert.equal(body.model, "claude-haiku-4-5-20251001");
+  // The whole object goes when effort was all it held; an empty one is not worth sending.
+  assert.equal(body.output_config, undefined);
 });
 
 test("an unknown tier leaves the request untouched", () => {
@@ -213,4 +235,32 @@ test("the same opening text in two sessions gets two keys", () => {
 test("the key survives metadata that is not JSON", () => {
   const body = { metadata: { user_id: "not-json" }, messages: [{ role: "user", content: "hi" }] };
   assert.doesNotThrow(() => conversationKey(body));
+});
+
+test("a trailing system message does not hide the user's turn", () => {
+  // Claude Code appends hook output as a mid-conversation system message. Any SessionStart
+  // hook produces one on the first request of every session, so reading only the last
+  // message meant that session never routed at all.
+  const body = {
+    tools: [{ name: "Read" }],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "Debug the deadlock" }] },
+      { role: "system", content: [{ type: "text", text: "SessionStart hook: ready" }] },
+    ],
+  };
+  assert.equal(newTurnPrompt(body), "Debug the deadlock");
+
+  // Several of them, and one that is a plain string, are stepped over just the same.
+  body.messages.push({ role: "system", content: "another hook fired" });
+  assert.equal(newTurnPrompt(body), "Debug the deadlock");
+
+  // A tool continuation is still not a new turn, however many system messages follow it.
+  body.messages.splice(1, 0, {
+    role: "user",
+    content: [{ type: "tool_result", tool_use_id: "1", content: "done" }],
+  });
+  assert.equal(newTurnPrompt(body), null);
+
+  // A system message alone is not a turn either.
+  assert.equal(newTurnPrompt({ tools: [{ name: "Read" }], messages: [{ role: "system", content: "x" }] }), null);
 });

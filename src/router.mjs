@@ -1,5 +1,6 @@
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { QUESTIONS, THRESHOLDS } from "./config.mjs";
+import { stripLengthHints } from "./policy.mjs";
 import { log } from "./log.mjs";
 
 // The SDK's defaults (10s per attempt, 2 retries, no total budget) are far too slow for a
@@ -21,6 +22,15 @@ function getClient() {
  * Asks Jev which tier fits this prompt. Returns null on any failure, which the policy
  * layer reads as "keep the current model" — routing must never block a prompt.
  *
+ * Only the request is sent. Measured on 2026-09-18 against four prompts spanning all four
+ * tiers, adding the current model, the context size or the available tiers changed no choice
+ * and lowered confidence on three of the four — they read as noise, not signal. The current
+ * model and context size are still used, but by `decide()`, where they are code-side gates
+ * rather than hints; the available tiers are enforced there too, by `clampToAvailable`.
+ *
+ * `current`, `contextTokens` and `available` stay in the signature because the caller has
+ * them and the policy layer needs them; they are simply no longer Jev's business.
+ *
  * @returns {Promise<?{choice: string, confidence: number, probabilities: object, ms: number}>}
  */
 export async function askJev({ prompt, current, contextTokens, available }) {
@@ -30,11 +40,7 @@ export async function askJev({ prompt, current, contextTokens, available }) {
   try {
     const result = await getClient().systemOne(
       {
-        state: {
-          request: prompt,
-          session: { current_model: current, context_tokens: contextTokens },
-          environment: { available_models: available },
-        },
+        state: { request: stripLengthHints(prompt) },
         questions: QUESTIONS,
       },
       { signal: abort.signal },

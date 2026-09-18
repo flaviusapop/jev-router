@@ -1,7 +1,10 @@
-try {
-  process.loadEnvFile();
-} catch {
-  // No .env; the key may still come from the real environment.
+// The same env-file chain the three launchers use, so this script finds the key wherever
+// they do rather than only in a project-local `.env`.
+const { loadEnv, jevKey, ENV_FILE_HINT } = await import("../src/env.mjs");
+loadEnv();
+if (!jevKey()) {
+  console.error(`No routing key. Put JEV_API_KEY=... in ${ENV_FILE_HINT()}`);
+  process.exit(1);
 }
 const { askJev } = await import("../src/router.mjs");
 const available = ["haiku", "sonnet", "opus", "fable"];

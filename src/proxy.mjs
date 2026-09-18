@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 import { tierOf, idOf, availableTiers, tierSpec, isAuto } from "./config.mjs";
 import { askJev } from "./router.mjs";
 import { decide } from "./policy.mjs";
-import { log } from "./log.mjs";
+import { log, announceServedModel } from "./log.mjs";
 import { writeStatus } from "./status.mjs";
 
 const UPSTREAM = "api.anthropic.com";
@@ -46,7 +46,15 @@ export function sanitizeSchema(node) {
  */
 export function newTurnPrompt(body) {
   if (!Array.isArray(body?.tools) || body.tools.length === 0) return null; // auxiliary call
-  const last = body?.messages?.[body.messages.length - 1];
+  // Mid-conversation system messages are appended after the user's turn - hook output is one,
+  // and any SessionStart hook produces one on the very first request of every session. They
+  // are operator text, not a turn, so they are stepped over rather than read as the end of
+  // the conversation; treating one as the last message means never routing at all.
+  const messages = body?.messages;
+  if (!Array.isArray(messages)) return null;
+  let index = messages.length - 1;
+  while (index >= 0 && messages[index]?.role === "system") index -= 1;
+  const last = messages[index];
   if (!last || last.role !== "user") return null;
   let text;
   if (typeof last.content === "string") {
@@ -64,9 +72,15 @@ export function newTurnPrompt(body) {
 }
 
 /**
- * Points a request at a tier, removing request fields that tier cannot accept. Claude Code
- * composes the body for whatever model it thinks it is talking to, so downgrading to Haiku
- * while leaving `thinking: {type:"adaptive"}` in place is a hard 400.
+ * Points a request at a tier, setting the reasoning effort that tier asks for and removing
+ * request fields that tier cannot accept. Claude Code composes the body for whatever model it
+ * thinks it is talking to, so downgrading to Haiku while leaving `thinking: {type:"adaptive"}`
+ * in place is a hard 400, and so is any `effort` at all.
+ *
+ * Effort is set rather than merely preserved because a tier is a (model, effort) pair: the top
+ * tier is the same model as the strong tier, thinking longer, and that only happens if the
+ * value goes out on the request. Claude Code's own choice is overridden for the same reason it
+ * does not pick the model - the whole session is running on the router's judgement.
  */
 export function applyTier(body, tierName) {
   const tier = tierSpec(tierName);
@@ -82,7 +96,9 @@ export function applyTier(body, tierName) {
       if (body.context_management.edits.length === 0) delete body.context_management;
     }
   }
-  if (!tier.effort && body.output_config) {
+  if (tier.effort) {
+    body.output_config = { ...(body.output_config ?? {}), effort: tier.effort };
+  } else if (body.output_config) {
     delete body.output_config.effort;
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
@@ -223,19 +239,7 @@ export async function startProxy() {
         { hostname: UPSTREAM, path: req.url, method: req.method, headers },
         (up) => {
           res.writeHead(up.statusCode, up.headers);
-          // Report the model the API itself says it used, so the routing can be confirmed
-          // from the wire rather than trusted from our own decision log. Claude Code's UI
-          // always shows the model it asked for, never the one we rewrote to.
-          if (process.env.JEV_DEBUG) {
-            let seen = false;
-            up.on("data", (c) => {
-              if (seen) return;
-              const m = /"model"\s*:\s*"([^"]+)"/.exec(c.toString("utf8"));
-              if (!m) return;
-              seen = true;
-              debug(`${up.statusCode} served by ${m[1]}`);
-            });
-          }
+          announceServedModel(up, "claude", up.statusCode);
           up.pipe(res);
         },
       );

@@ -1,11 +1,12 @@
 {
   "name": "jev-router",
   "version": "0.1.0",
-  "description": "Runs coding CLIs and routes each turn to the cheapest sufficient model using TypeSafe Jev",
+  "description": "Runs Claude Code, Codex and Grok, routing each turn to the cheapest sufficient model using TypeSafe Jev",
   "type": "module",
   "bin": {
     "jev-claude": "bin/jev-claude.mjs",
-    "jev-codex": "bin/jev-codex.mjs"
+    "jev-codex": "bin/jev-codex.mjs",
+    "jev-grok": "bin/jev-grok.mjs"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\""
@@ -21,7 +22,9 @@
     "codex",
     "model-routing",
     "jev",
-    "typesafe"
+    "typesafe",
+    "grok",
+    "xai"
   ],
   "engines": {
     "node": ">=20.12"

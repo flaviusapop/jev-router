@@ -1,25 +1,12 @@
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { loadEnv, jevKey, ENV_FILE_HINT } from "./env.mjs";
 import { AUTO_MODEL } from "./config.mjs";
 import { startCodexProxy } from "./codex-proxy.mjs";
 
 const PROVIDER = "jev";
 
-export function loadEnv() {
-  for (const file of [
-    join(process.cwd(), ".env"),
-    join(homedir(), ".jev-router.env"),
-    join(homedir(), ".jev-claude.env"),
-  ]) {
-    try {
-      process.loadEnvFile(file);
-    } catch {
-      // Missing or unreadable; values may still come from the real environment.
-    }
-  }
-}
 
 export function resolveCodex() {
   const win = process.platform === "win32";
@@ -76,14 +63,14 @@ export async function runCodex() {
 
   let args = process.argv.slice(2);
   let close = () => {};
-  if (process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY) {
+  if (jevKey()) {
     const proxy = await startCodexProxy();
     close = proxy.close;
     args = codexArgs(`http://127.0.0.1:${proxy.port}`, args);
   } else {
     process.stderr.write(
       "[jev] no JEV_API_KEY found - starting Codex without routing\n" +
-        `[jev] add JEV_API_KEY=... to ${join(homedir(), ".jev-router.env")} and restart jev-codex\n`,
+        `[jev] add JEV_API_KEY=... to ${ENV_FILE_HINT()} and restart jev-codex\n`,
     );
   }
 

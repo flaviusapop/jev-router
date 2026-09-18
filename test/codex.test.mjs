@@ -77,6 +77,38 @@ test("maps tiers and clamps unsupported reasoning effort", () => {
   assert.equal(body.reasoning.effort, "medium");
 });
 
+test("each tier sets its own effort, not the one Codex asked for", () => {
+  const models = new Map(
+    ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"].map((id) => [
+      id,
+      {
+        default_reasoning_level: "medium",
+        supported_reasoning_levels: ["low", "medium", "high", "xhigh", "max"].map((effort) => ({ effort })),
+      },
+    ]),
+  );
+  const routed = (tier) => {
+    const body = { model: "jev-auto", reasoning: { effort: "medium", summary: "auto" } };
+    applyCodexTier(body, tier, models);
+    return [body.model, body.reasoning.effort];
+  };
+  assert.deepEqual(routed("haiku"), ["gpt-5.6-luna", "low"]);
+  assert.deepEqual(routed("sonnet"), ["gpt-5.6-terra", "medium"]);
+  assert.deepEqual(routed("opus"), ["gpt-5.6-sol", "high"]);
+  // The long tier is the strong model thinking harder, not gpt-6-astra, which bills credits.
+  assert.deepEqual(routed("fable"), ["gpt-5.6-sol", "xhigh"]);
+
+  // Fields Codex set alongside the effort are left alone.
+  const body = { model: "jev-auto", reasoning: { effort: "low", summary: "auto" } };
+  applyCodexTier(body, "opus", models);
+  assert.deepEqual(body.reasoning, { effort: "high", summary: "auto" });
+
+  // An unknown tier leaves the request untouched rather than guessing a model.
+  const untouched = { model: "jev-auto", reasoning: { effort: "low" } };
+  applyCodexTier(untouched, "nonsense", models);
+  assert.equal(untouched.model, "jev-auto");
+});
+
 test("surfaces routing as a native commentary event", () => {
   const events = jevDecisionEvents({ tier: "opus", confidence: 0.91, reason: "jev" });
   assert.match(events, /response\.output_item\.added/);

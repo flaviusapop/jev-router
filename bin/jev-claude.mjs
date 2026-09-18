@@ -8,6 +8,7 @@ import { startProxy } from "../src/proxy.mjs";
 import { AUTO_MODEL } from "../src/config.mjs";
 import { readSavedModel, restoreSavedModel } from "../src/settings.mjs";
 import { LOG_FILE } from "../src/log.mjs";
+import { loadEnv, jevKey, ENV_FILE_HINT } from "../src/env.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -66,15 +67,7 @@ function statusLineArgs() {
   return ["--settings", file];
 }
 
-// Home first, then cwd, so a project-local .env wins over the user-level one. The home file
-// is what makes a globally installed `jev-claude` work from any directory.
-for (const file of [join(homedir(), ".jev-claude.env"), join(process.cwd(), ".env")]) {
-  try {
-    process.loadEnvFile(file);
-  } catch {
-    // Missing or unreadable; the key may still come from the real environment.
-  }
-}
+loadEnv();
 
 /**
  * Finds the Claude Code executable on PATH. Resolving it here rather than leaning on the
@@ -113,7 +106,7 @@ if (!claude) {
   process.exit(1);
 }
 
-if (process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY) {
+if (jevKey()) {
   const { port, close } = await startProxy();
   env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${port}`;
   Object.assign(env, autoModelEnv());

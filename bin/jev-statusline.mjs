@@ -2,6 +2,7 @@
 // Status line for Claude Code. Claude Code pipes session JSON on stdin and renders whatever
 // this prints. See https://code.claude.com/docs/en/statusline
 import { readStatus } from "../src/status.mjs";
+import { tierSpec } from "../src/config.mjs";
 
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
@@ -33,7 +34,12 @@ if (status?.manual) {
   // stays short and the interesting case explains itself.
   const held = status.reason && status.reason !== "jev" && !status.reason.includes("override");
   const why = held ? ` ${DIM}(${status.reason.split("/")[0]})${RESET}` : "";
-  routed = `${color}⚡ ${status.tier}${RESET}${p}${why}`;
+  // The strong and long tiers run the same model at different depths, so the tier name on its
+  // own no longer says what happened. Name the model and the effort instead.
+  const spec = tierSpec(status.tier);
+  const model = spec?.id?.replace(/^claude-/, "") ?? status.tier;
+  const effort = spec?.effort ? ` ${DIM}${spec.effort}${RESET}` : "";
+  routed = `${color}⚡ ${model}${RESET}${effort}${p}${why}`;
 }
 
 process.stdout.write(`${routed} ${DIM}·${RESET} ${dir} ${DIM}· ${pct}% context${RESET}\n`);
