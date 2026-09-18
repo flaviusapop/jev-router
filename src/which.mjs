@@ -62,3 +62,25 @@ export const missingMessage = (command, cli, url) =>
   `[jev] ${cli} is not installed, or \`${command}\` is not on your PATH.\n` +
   `[jev] jev-${command} runs the real ${cli}; install it first:\n` +
   `[jev]   ${url}\n`;
+
+/**
+ * One argument, written so that the program on the other side of cmd.exe receives it whole.
+ *
+ * Only Windows shims need this, and only because Node refuses to start a `.cmd` without a
+ * shell. The naive version - wrap anything containing a space in quotes - breaks the moment
+ * the argument already contains one: `name="Jev Router"` becomes `"name="Jev Router""`, whose
+ * inner quote closes the outer, so `Router` arrives as a separate argument. Measured
+ * 2026-09-19: Codex read that stray word as the prompt and answered it, every single start.
+ *
+ * The rules are MSVCRT's, which is what both Node and a Rust CLI use to split the line back
+ * up: a quote is escaped, and any run of backslashes before a quote - or before the closing
+ * quote - is doubled.
+ */
+export function quoteForShell(arg) {
+  if (arg !== "" && !/[\s"]/.test(arg)) return arg;
+  const escaped = String(arg).replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\*)$/, "$1$1");
+  return `"${escaped}"`;
+}
+
+/** Arguments written the way this particular command has to receive them. */
+export const shellSafe = (args, shell) => (shell ? args.map(quoteForShell) : args);

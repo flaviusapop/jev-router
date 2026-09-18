@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { which, missingMessage } from "./which.mjs";
+import { which, missingMessage, shellSafe } from "./which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "./env.mjs";
 import { AUTO_MODEL } from "./config.mjs";
 import { startProxy } from "./proxy.mjs";
@@ -106,7 +106,7 @@ export async function runOpencode() {
   const childArgs = [...command.prefix, ...args];
   const child = spawn(
     command.file,
-    command.shell ? childArgs.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)) : childArgs,
+    shellSafe(childArgs, command.shell),
     { stdio: "inherit", shell: command.shell, env },
   );
   child.on("error", (err) => {

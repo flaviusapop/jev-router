@@ -5,7 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isRunnable, which, extensionsFor } from "../src/which.mjs";
+import { isRunnable, which, extensionsFor, quoteForShell, shellSafe } from "../src/which.mjs";
 
 const BIN = join(fileURLToPath(new URL("../bin/", import.meta.url)));
 const WINDOWS = process.platform === "win32";
@@ -117,4 +117,81 @@ test("only Windows has extensions to try", () => {
   assert.deepEqual(extensionsFor("linux"), [""]);
   assert.ok(extensionsFor("win32", { PATHEXT: ".EXE;.CMD" }).includes(".CMD"));
   assert.ok(extensionsFor("win32", { PATHEXT: ".EXE;.CMD" }).includes(".ps1"));
+});
+
+/**
+ * A stub that reports the arguments it was handed, one per line, the way the real CLI's own
+ * runtime would split them. A batch file cannot do this - cmd splits its own `%1` on `=` as
+ * well as on spaces - so the shim only forwards the line to a program that parses it properly.
+ */
+function argvStub(name) {
+  const dir = mkdtempSync(join(tmpdir(), "jev-argv-"));
+  writeFileSync(join(dir, "print-argv.mjs"),
+    "for (const a of process.argv.slice(2)) console.log(`ARG[${a}]`);\n");
+  if (WINDOWS) {
+    writeFileSync(join(dir, `${name}.cmd`), `@echo off\r\nnode "%~dp0print-argv.mjs" %*\r\n`);
+  } else {
+    const file = join(dir, name);
+    writeFileSync(file, `#!/bin/sh\nexec node "$(dirname "$0")/print-argv.mjs" "$@"\n`);
+    chmodSync(file, 0o755);
+  }
+  return dir;
+}
+
+const argvOf = (command, cli) => {
+  const dir = argvStub(cli);
+  const path = [dir, process.env.PATH ?? ""].join(delimiter);
+  const out = spawnSync(process.execPath, [join(BIN, `jev-${command}.mjs`)], {
+    encoding: "utf8",
+    timeout: 30000,
+    env: {
+      PATH: path, Path: path,
+      HOME: isolatedHome(), USERPROFILE: isolatedHome(),
+      ComSpec: process.env.ComSpec ?? "",
+      SystemRoot: process.env.SystemRoot ?? "",
+      TEMP: process.env.TEMP ?? tmpdir(),
+      TMP: process.env.TMP ?? tmpdir(),
+      // A key the router never spends: the stub sends no requests, so Jev is never called.
+      // It only has to be present, or the launcher takes the no-routing path and adds nothing.
+      JEV_API_KEY: "not-a-real-key",
+    },
+  });
+  return [...out.stdout.matchAll(/^ARG\[(.*)\]$/gm)].map((m) => m[1]);
+};
+
+test("jev-codex hands Codex its configuration and nothing else", () => {
+  // Measured 2026-09-19: `model_providers.jev.name="Jev Router"` was quoted as
+  // `"model_providers.jev.name="Jev Router""`, whose inner quote closed the outer one. `Router`
+  // arrived as a separate argument, Codex read it as the prompt, and every single start began
+  // by asking the model what to do about the word "Router" - a routed turn, every time.
+  const argv = argvOf("codex", "codex");
+  assert.ok(argv.length > 0, "the launcher must reach the CLI");
+  assert.ok(!argv.includes("Router"), `a stray argument survived: ${JSON.stringify(argv)}`);
+  assert.ok(
+    argv.includes('model_providers.jev.name="Jev Router"'),
+    `the provider name must arrive whole: ${JSON.stringify(argv)}`,
+  );
+  // Every --config must be followed by its value, never by another flag.
+  for (const [i, a] of argv.entries()) {
+    if (a === "--config") assert.match(argv[i + 1] ?? "", /=/, "a --config lost its value");
+  }
+});
+
+test("jev-grok and jev-opencode pass their arguments through whole", () => {
+  assert.ok(argvOf("grok", "grok").includes("jev-auto"), "grok starts on the sentinel");
+  // opencode is configured through the environment, so it should receive no added arguments.
+  assert.deepEqual(argvOf("opencode", "opencode"), []);
+});
+
+test("an argument that already contains quotes survives the shell", () => {
+  assert.equal(quoteForShell("plain"), "plain");
+  assert.equal(quoteForShell('a="b c"'), '"a=\\"b c\\""');
+  assert.equal(quoteForShell("no-quotes-no-spaces"), "no-quotes-no-spaces");
+  // A trailing backslash would otherwise escape the closing quote.
+  assert.equal(quoteForShell("ends with backslash\\"), '"ends with backslash\\\\"');
+});
+
+test("nothing is rewritten when no shell is involved", () => {
+  const args = ['a="b c"', "plain"];
+  assert.deepEqual(shellSafe(args, false), args);
 });

@@ -8,7 +8,7 @@ import { startProxy } from "../src/proxy.mjs";
 import { AUTO_MODEL } from "../src/config.mjs";
 import { readSavedModel, restoreSavedModel } from "../src/settings.mjs";
 import { LOG_FILE } from "../src/log.mjs";
-import { which, missingMessage } from "../src/which.mjs";
+import { which, missingMessage, shellSafe } from "../src/which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "../src/env.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -104,7 +104,7 @@ if (jevKey()) {
 const childArgs = [...claude.prefix, ...args];
 const child = spawn(
   claude.file,
-  claude.shell ? childArgs.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : childArgs,
+  shellSafe(childArgs, claude.shell),
   { stdio: "inherit", shell: claude.shell, env },
 );
 
