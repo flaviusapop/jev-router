@@ -91,3 +91,20 @@ test("a model the user named themselves stands the router down", () => {
   assert.equal(picksModel(["--model=anthropic/claude-opus-5"]), true);
   assert.equal(picksModel(["run", "fix the bug"]), false);
 });
+
+test("every CLI that must be told a window is told the same one", async () => {
+  // A turn can be routed down to Haiku at any point, so the smallest window is the only one a
+  // routed session may assume. Two CLIs need the number; it is stated once.
+  const { SMALLEST_CONTEXT_TOKENS } = await import("../src/config.mjs");
+  assert.equal(sentinelLimits().context, SMALLEST_CONTEXT_TOKENS);
+  const source = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../bin/jev-claude.mjs", import.meta.url), "utf8"));
+  assert.match(source, /CLAUDE_CODE_MAX_CONTEXT_TOKENS/, "Claude Code has to be told too");
+  assert.match(source, /SMALLEST_CONTEXT_TOKENS/, "and told the shared number, not a literal");
+});
+
+test("a window the user set themselves is left alone", async () => {
+  const source = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../bin/jev-claude.mjs", import.meta.url), "utf8"));
+  assert.match(source, /if \(!process\.env\.CLAUDE_CODE_MAX_CONTEXT_TOKENS\)/);
+});

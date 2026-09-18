@@ -54,6 +54,17 @@ export const TIERS = [
   },
 ];
 
+/**
+ * The smallest context window any tier can serve, which is the only window a routed session
+ * may assume.
+ *
+ * A turn can be routed down to Haiku at any point - more so now that a run of cheap turns
+ * brings a session back down - and Haiku 4.5 tops out at 200k. A session allowed to grow past
+ * that on the strength of a larger model's window would fail the moment it landed on the
+ * small one. Every CLI that has to be told a number gets this one.
+ */
+export const SMALLEST_CONTEXT_TOKENS = 200000;
+
 export const TIER_NAMES = TIERS.map((t) => t.name);
 
 export const rankOf = (name) => TIER_NAMES.indexOf(name);

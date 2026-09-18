@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { which, missingMessage, shellSafe } from "./which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "./env.mjs";
-import { AUTO_MODEL } from "./config.mjs";
+import { AUTO_MODEL, SMALLEST_CONTEXT_TOKENS } from "./config.mjs";
 import { startProxy } from "./proxy.mjs";
 import { LOG_FILE, log } from "./log.mjs";
 
@@ -19,7 +19,7 @@ export const resolveOpencode = () => which("opencode");
  * to hold whatever context it declares, so both have to be true of every tier the router might
  * pick. Claiming Opus's window and then routing down to Haiku is a hard 400 on the way out.
  */
-export const sentinelLimits = () => ({ context: 200000, output: 32000 });
+export const sentinelLimits = () => ({ context: SMALLEST_CONTEXT_TOKENS, output: 32000 });
 
 /**
  * The config that turns opencode into a routed session.

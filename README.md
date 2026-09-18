@@ -414,6 +414,14 @@ Three things the proxy has to handle, none of them documented:
   stripped for tiers that do not support them.
 - **`HEAD /`.** Claude Code probes the base URL before its first request.
 
+
+**The sentinel is not in Claude Code's catalogue, and from v2.1.277 it says so.** The warning
+is correct and harmless: it cannot look `jev-auto` up, so it assumes a 200k context window for
+auto-compact. 200k is exactly right for a routed session - a turn can land on Haiku 4.5 at any
+point, and that is where it tops out - so `jev-claude` states the number through
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` rather than leaving it guessed, which also settles the
+warning. A value you set yourself is left alone.
+
 ## Development
 
 ```bash

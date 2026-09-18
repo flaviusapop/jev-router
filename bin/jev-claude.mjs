@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startProxy } from "../src/proxy.mjs";
-import { AUTO_MODEL } from "../src/config.mjs";
+import { AUTO_MODEL, SMALLEST_CONTEXT_TOKENS } from "../src/config.mjs";
 import { readSavedModel, restoreSavedModel } from "../src/settings.mjs";
 import { LOG_FILE } from "../src/log.mjs";
 import { which, missingMessage, shellSafe } from "../src/which.mjs";
@@ -31,6 +31,12 @@ function autoModelEnv() {
   // ANTHROPIC_MODEL applies to this session only and is never written to settings, so the
   // default costs the user nothing permanent. A model they set themselves still wins.
   if (!process.env.ANTHROPIC_MODEL) env.ANTHROPIC_MODEL = AUTO_MODEL;
+  // Claude Code cannot look the sentinel up in its catalogue, so from v2.1.277 it says so on
+  // every start and assumes 200k. That assumption is right - a turn can land on Haiku at any
+  // point - but it is worth stating rather than being guessed, which also settles the warning.
+  if (!process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS) {
+    env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(SMALLEST_CONTEXT_TOKENS);
+  }
   return env;
 }
 
