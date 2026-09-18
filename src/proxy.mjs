@@ -139,7 +139,11 @@ export function conversationKey(body) {
             .map((b) => b.text)
             .join("")
         : "";
-  return createHash("sha1").update(`${session}|${text}`).digest("hex").slice(0, 12);
+  // Claude Code injects `<system-reminder>` blocks into the first message too, and rewrites
+  // them between requests. Leaving them in makes the key churn mid-conversation: measured
+  // 2026-09-18, one Explore sub-agent produced two keys and so two Jev calls for one task.
+  const stable = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+  return createHash("sha1").update(`${session}|${stable}`).digest("hex").slice(0, 12);
 }
 
 /**
@@ -155,10 +159,35 @@ export function observeModel(state, current) {
 }
 
 
+/**
+ * Whether a request naming a concrete model is a sub-agent Claude Code just spawned, rather
+ * than a model the user picked.
+ *
+ * Both look identical at the model field: Claude Code resolves a sub-agent's model at spawn
+ * time and sends that id, never the sentinel, so a sub-agent would otherwise run unrouted on
+ * whatever the parent happened to be. Measured 2026-09-18: a main agent routed to haiku spawned
+ * an Explore agent that ran on `claude-opus-5`, untouched.
+ *
+ * What separates them is the conversation, not the model. A sub-agent opens a new conversation
+ * inside a session already being routed, so its key has never been seen; a `/model` pick stays
+ * in the conversation it was made in, whose key is already known. Requiring a real agent turn
+ * as well keeps Claude Code's own auxiliary calls — titles, summaries, typeahead — out of it,
+ * since those carry no tools.
+ */
+export function isSubagentSpawn({ session, key, routedSessions, convos, prompt }) {
+  return Boolean(prompt) && routedSessions.has(session) && !convos.has(key);
+}
+
 export async function startProxy() {
   // Tier routed for each conversation's turn in flight, reused by its follow-up requests and
   // by the cache-rebuild guard, which needs to know what the prompt cache was built on.
   const convos = new Map();
+  // Sessions in which the sentinel has been seen, so a concrete model arriving later can be
+  // told apart: inside one of these a brand-new conversation is a sub-agent Claude Code spawned.
+  const routedSessions = new Set();
+  // Conversation keys known to belong to a sub-agent, so their follow-up requests keep the
+  // tier chosen for them without re-asking Jev, and never touch the main agent's status line.
+  const subagents = new Set();
   const stateFor = (key) => {
     let s = convos.get(key);
     if (!s) {
@@ -186,22 +215,40 @@ export async function startProxy() {
           }
           body.tools?.forEach((t) => sanitizeSchema(t.input_schema));
 
-          // Anything that is not the sentinel is a model the user chose, and an explicit
-          // choice beats the router. That also covers Claude Code's own cheap Haiku calls
-          // for titles and summaries, which must never be pinned up to the session's tier.
-          if (!isAuto(body.model)) {
+          const session = sessionOf(body);
+          const key = conversationKey(body);
+          const prompt = newTurnPrompt(body);
+          // A sub-agent names a concrete model but is not a choice the user made, so it is
+          // routed like any other conversation. Its tier is kept under its own key, which
+          // means a sub-agent can run on a different tier from the agent that spawned it.
+          // Once a conversation is known to be a sub-agent it stays one: its follow-up requests
+          // name the same concrete model and must keep the tier chosen for it, not be read as
+          // the user reaching for /model.
+          const subagent =
+            !isAuto(body.model) &&
+            (subagents.has(key) || isSubagentSpawn({ session, key, routedSessions, convos, prompt }));
+
+          if (!isAuto(body.model) && !subagent && !convos.has(key)) {
+            // Anything that is not the sentinel is a model the user chose, and an explicit
+            // choice beats the router. That also covers Claude Code's own cheap Haiku calls
+            // for titles and summaries, which must never be pinned up to the session's tier.
             debug(`passthrough, user selected ${body.model}`);
             // Only a real agent turn reflects the user's choice. Claude Code's own auxiliary
             // calls carry no tools and must not flip the status line to manual mid-session.
             if (Array.isArray(body.tools)) {
-              writeStatus(sessionOf(body), { manual: true, at: Date.now() });
+              writeStatus(session, { manual: true, at: Date.now() });
             }
+          } else if (!isAuto(body.model) && !subagent) {
+            // A conversation we route, now naming a real model: the user picked one with
+            // /model inside it. Hand the conversation back and stop routing it.
+            debug(`passthrough, user selected ${body.model}`);
+            convos.delete(key);
+            writeStatus(session, { manual: true, at: Date.now() });
           } else {
-            const key = conversationKey(body);
+            if (isAuto(body.model)) routedSessions.add(session);
             const state = stateFor(key);
             // What the prompt cache was built on, which is what a downgrade would discard.
             const current = state.tier ?? "sonnet";
-            const prompt = newTurnPrompt(body);
             let fresh = null;
             if (prompt) {
               const available = availableTiers();
@@ -211,7 +258,8 @@ export async function startProxy() {
               state.tier = tier;
               fresh = { confidence: jev?.confidence ?? null, reason };
               debug(
-                `${key} ${jev ? `${jev.ms}ms p=${jev.confidence.toFixed(2)}` : "no-jev"} ` +
+                `${key}${subagent ? " subagent" : ""} ` +
+                  `${jev ? `${jev.ms}ms p=${jev.confidence.toFixed(2)}` : "no-jev"} ` +
                   `${current} -> ${tier} (${reason}) ctx~${contextTokens} | ${prompt.slice(0, 60)}`,
               );
             }
@@ -221,8 +269,12 @@ export async function startProxy() {
             debug(`${key} rewrite ${body.model} -> ${idOf(tier)}`);
             applyTier(body, tier);
             // Publish what went out. Claude Code's UI shows the row you picked, not the tier
-            // it resolved to, so the status line is the only place this is visible.
-            writeStatus(sessionOf(body), { tier, ...fresh, at: Date.now() });
+            // it resolved to, so the status line is the only place this is visible. A
+            // sub-agent's tier is its own business and must not overwrite the main agent's.
+            if (!subagent && !subagents.has(key)) {
+              writeStatus(session, { tier, ...fresh, at: Date.now() });
+            }
+            if (subagent) subagents.add(key);
           }
           out = Buffer.from(JSON.stringify(body));
         } catch (err) {

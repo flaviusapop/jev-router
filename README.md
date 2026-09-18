@@ -239,6 +239,37 @@ Stripping is anchored to directives, never to the words alone, so the work survi
 
 A prompt that is *only* a length hint is left alone, so there is always something to judge.
 
+## Sub-agents
+
+A sub-agent is routed independently of the agent that spawned it, on the text of its own task.
+A search sub-agent lands on the cheap tier while its parent is working at the expensive one,
+and a design sub-agent lands on the expensive tier while its parent sits cheap.
+
+Claude Code spawns them two different ways, and both are handled:
+
+- **Inheriting the sentinel.** The request arrives as `jev-auto` and routes like any other
+  conversation.
+- **Naming a resolved model.** Claude Code resolves some agents' models at spawn time and
+  sends a concrete id. Measured 2026-09-18: a main agent routed to Haiku spawned an Explore
+  agent that ran on `claude-opus-5`, completely unrouted.
+
+The second case is indistinguishable from a `/model` pick at the model field, so the
+conversation is what separates them. A sub-agent opens a **new** conversation inside a session
+already being routed; a `/model` pick stays in the conversation it was made in, whose key is
+already known. An explicit pick still beats the router, exactly as before.
+
+```
+6bc4b3247b8f          p=0.95 sonnet -> haiku  | Use the Explore agent to find where...
+939390f7e6c4 subagent p=0.98 sonnet -> haiku  | Search this repository for where...
+939390f7e6c4 rewrite claude-opus-5 -> claude-haiku-4-5-20251001
+```
+
+Each sub-agent keeps its own tier under its own key, so its follow-up tool-loop requests reuse
+that tier without re-asking Jev, and its choice never leaks into the parent's status line.
+
+Conversation keys ignore `<system-reminder>` blocks for this reason: Claude Code rewrites them
+between requests, and a key that churns mid-conversation costs a redundant Jev call per turn.
+
 ## Compatibility notes
 
 Three things the proxy has to handle, none of them documented:
@@ -259,7 +290,7 @@ Three things the proxy has to handle, none of them documented:
 npm install
 echo "JEV_API_KEY=..." > .env
 
-npm test                     # 90 offline tests
+npm test                     # 96 offline tests
 node test/live-routing.mjs   # real Jev calls across four difficulty tiers
 node bin/jev-claude.mjs -p "what is 2+2?"
 
@@ -268,7 +299,7 @@ npm link                     # try the globally installed form
 
 `npm test` covers the policy decision table with synthetic Jev answers, plus the proxy's pure
 functions: schema sanitising, turn detection, capability stripping, conversation keying,
-length-hint stripping and settings restoration.
+length-hint stripping, sub-agent detection and settings restoration.
 
 `JEV_DEBUG=1` logs each decision, the rewrite it produced, and the model the supplier says it
 actually served — read off the response body, so routing is confirmed from the wire rather
