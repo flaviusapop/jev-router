@@ -461,7 +461,11 @@ Opus.
   whole session cheap.
 - Under the Grok sentinel the system prompt Grok builds says "Grok 4.6" whichever model the
   turn is finally routed to, because the CLI composes it before the proxy sees the request.
-- Developed on Windows against Claude Code v2.1.101, Codex v0.60.0 and Grok CLI v1.0.34.
+- Developed on Windows against Claude Code v2.1.101, Codex v0.60.0, Grok CLI v1.0.34 and
+  opencode v1.18.29. macOS and Linux are covered by CI rather than by daily use: every
+  launcher is started there against a stub CLI and has to reach it, pass its arguments
+  through, and fail cleanly when the CLI is missing. Routing itself is platform-independent,
+  but a report from real use on either is welcome.
   CI runs the suite on Linux, macOS and Windows against Node 22 and 24; the suite
   stands up its own local upstreams, so it never reaches a supplier or Jev.
 
