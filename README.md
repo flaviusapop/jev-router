@@ -264,6 +264,14 @@ conversation is what separates them. A sub-agent opens a **new** conversation in
 already being routed; a `/model` pick stays in the conversation it was made in, whose key is
 already known. An explicit pick still beats the router, exactly as before.
 
+A pick is remembered for the rest of the session, not for one turn. Handing the conversation
+back removes it from the routed set, which on its next turn would make it look like a brand new
+conversation inside a routed session - a sub-agent spawn - and the router would take it
+straight back.
+
+Sub-agents that conversation spawns are still routed. Picking a model says what *you* want to
+work with; it does not say what every search and file-listing agent it spawns should cost.
+
 ```
 6bc4b3247b8f          p=0.95 sonnet -> haiku  | Use the Explore agent to find where...
 939390f7e6c4 subagent p=0.98 sonnet -> haiku  | Search this repository for where...

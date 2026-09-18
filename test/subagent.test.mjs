@@ -38,6 +38,22 @@ test("a sub-agent in one session is not confused with another session", () => {
   assert.equal(isSubagentSpawn(scene({ session: "s2" })), false);
 });
 
+test("a /model pick keeps its conversation for good, not for one turn", () => {
+  // The pick drops the conversation from `convos`, so on its next turn the key is one we have
+  // never seen inside a session we are routing - the exact shape of a sub-agent spawn. Without
+  // `manual` the router would take the conversation straight back, one turn after being told
+  // to stand down.
+  const after = scene({ key: "main-key", convos: new Map(), manual: new Set(["main-key"]) });
+  assert.equal(isSubagentSpawn(after), false);
+});
+
+test("a sub-agent spawned from a manually picked conversation is still routed", () => {
+  // Deliberate: picking a model says what *you* want to work with, not what every search and
+  // file-listing agent it spawns should cost.
+  const spawned = scene({ key: "new-key", convos: new Map(), manual: new Set(["main-key"]) });
+  assert.equal(isSubagentSpawn(spawned), true);
+});
+
 test("the answer is always a boolean, never a Set or a Map", () => {
   // The caller uses it in a condition beside isAuto(); a truthy Map would silently pass.
   for (const over of [{}, { prompt: null }, { key: "main-key" }]) {

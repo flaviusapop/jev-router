@@ -173,9 +173,15 @@ export function observeModel(state, current) {
  * in the conversation it was made in, whose key is already known. Requiring a real agent turn
  * as well keeps Claude Code's own auxiliary calls — titles, summaries, typeahead — out of it,
  * since those carry no tools.
+ *
+ * A conversation the user took manual control of is the exception to "never been seen": the
+ * pick hands it back, so it stops being one we route, and without `manual` its very next turn
+ * would look brand new inside a routed session and be routed again. Sub-agents that
+ * conversation spawns are still routed - they are the router's job even when its parent
+ * is not.
  */
-export function isSubagentSpawn({ session, key, routedSessions, convos, prompt }) {
-  return Boolean(prompt) && routedSessions.has(session) && !convos.has(key);
+export function isSubagentSpawn({ session, key, routedSessions, convos, prompt, manual = new Set() }) {
+  return Boolean(prompt) && routedSessions.has(session) && !convos.has(key) && !manual.has(key);
 }
 
 export async function startProxy() {
@@ -188,6 +194,9 @@ export async function startProxy() {
   // Conversation keys known to belong to a sub-agent, so their follow-up requests keep the
   // tier chosen for them without re-asking Jev, and never touch the main agent's status line.
   const subagents = new Set();
+  // Conversation keys the user took over with /model. Kept apart from `convos`, which evicts
+  // its oldest entry past 50, because a choice the user made should outlast that.
+  const manual = new Set();
   const stateFor = (key) => {
     let s = convos.get(key);
     if (!s) {
@@ -226,7 +235,8 @@ export async function startProxy() {
           // the user reaching for /model.
           const subagent =
             !isAuto(body.model) &&
-            (subagents.has(key) || isSubagentSpawn({ session, key, routedSessions, convos, prompt }));
+            (subagents.has(key) ||
+              isSubagentSpawn({ session, key, routedSessions, convos, prompt, manual }));
 
           if (!isAuto(body.model) && !subagent && !convos.has(key)) {
             // Anything that is not the sentinel is a model the user chose, and an explicit
@@ -240,9 +250,12 @@ export async function startProxy() {
             }
           } else if (!isAuto(body.model) && !subagent) {
             // A conversation we route, now naming a real model: the user picked one with
-            // /model inside it. Hand the conversation back and stop routing it.
+            // /model inside it. Hand the conversation back and stop routing it - for good,
+            // not for one turn: dropping it from `convos` alone would make its next turn look
+            // like a fresh conversation inside a routed session, which is a sub-agent spawn.
             debug(`passthrough, user selected ${body.model}`);
             convos.delete(key);
+            manual.add(key);
             writeStatus(session, { manual: true, at: Date.now() });
           } else {
             if (isAuto(body.model)) routedSessions.add(session);
