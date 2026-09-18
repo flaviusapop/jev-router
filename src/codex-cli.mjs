@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
-import { join } from "node:path";
+import { which, missingMessage } from "./which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "./env.mjs";
 import { AUTO_MODEL } from "./config.mjs";
 import { startCodexProxy } from "./codex-proxy.mjs";
@@ -8,26 +7,7 @@ import { startCodexProxy } from "./codex-proxy.mjs";
 const PROVIDER = "jev";
 
 
-export function resolveCodex() {
-  const win = process.platform === "win32";
-  const exts = win ? [".exe", ".ps1", ".cmd", ".bat"] : [""];
-  for (const dir of (process.env.PATH ?? "").split(win ? ";" : ":")) {
-    if (!dir) continue;
-    for (const ext of exts) {
-      const file = join(dir.replace(/^"|"$/g, ""), `codex${ext}`);
-      try {
-        accessSync(file, constants.F_OK);
-        if (/\.ps1$/i.test(file)) {
-          return { file: "powershell.exe", prefix: ["-NoProfile", "-File", file], shell: false };
-        }
-        return { file, prefix: [], shell: /\.(cmd|bat)$/i.test(file) };
-      } catch {
-        // Not here; keep looking.
-      }
-    }
-  }
-  return null;
-}
+export const resolveCodex = () => which("codex");
 
 export const codexArgs = (baseURL, args) => [
   ...(args.some((arg) => arg === "--model" || arg === "-m" || arg.startsWith("--model="))
@@ -52,11 +32,7 @@ export async function runCodex() {
   loadEnv();
   const command = resolveCodex();
   if (!command) {
-    process.stderr.write(
-      "[jev] OpenAI Codex is not installed, or `codex` is not on your PATH.\n" +
-        "[jev] jev-codex runs the real Codex CLI; install it first:\n" +
-        "[jev]   https://developers.openai.com/codex/cli\n",
-    );
+    process.stderr.write(missingMessage("codex", "OpenAI Codex", "https://developers.openai.com/codex/cli"));
     process.exitCode = 1;
     return;
   }

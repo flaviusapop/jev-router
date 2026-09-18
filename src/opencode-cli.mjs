@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { which, missingMessage } from "./which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "./env.mjs";
 import { AUTO_MODEL } from "./config.mjs";
 import { startProxy } from "./proxy.mjs";
@@ -9,26 +10,7 @@ import { LOG_FILE, log } from "./log.mjs";
 
 const PROVIDER = "anthropic";
 
-export function resolveOpencode() {
-  const win = process.platform === "win32";
-  const exts = win ? [".exe", ".ps1", ".cmd", ".bat"] : [""];
-  for (const dir of (process.env.PATH ?? "").split(win ? ";" : ":")) {
-    if (!dir) continue;
-    for (const ext of exts) {
-      const file = join(dir.replace(/^"|"$/g, ""), `opencode${ext}`);
-      try {
-        accessSync(file, constants.F_OK);
-        if (/\.ps1$/i.test(file)) {
-          return { file: "powershell.exe", prefix: ["-NoProfile", "-File", file], shell: false };
-        }
-        return { file, prefix: [], shell: /\.(cmd|bat)$/i.test(file) };
-      } catch {
-        // Not here; keep looking.
-      }
-    }
-  }
-  return null;
-}
+export const resolveOpencode = () => which("opencode");
 
 /**
  * The smallest context and output any tier can serve.
@@ -92,11 +74,7 @@ export async function runOpencode() {
   loadEnv();
   const command = resolveOpencode();
   if (!command) {
-    process.stderr.write(
-      "[jev] opencode is not installed, or `opencode` is not on your PATH.\n" +
-        "[jev] jev-opencode runs the real opencode CLI; install it first:\n" +
-        "[jev]   https://opencode.ai/docs\n",
-    );
+    process.stderr.write(missingMessage("opencode", "opencode", "https://opencode.ai/docs"));
     process.exitCode = 1;
     return;
   }

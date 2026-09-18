@@ -8,6 +8,7 @@ import { startProxy } from "../src/proxy.mjs";
 import { AUTO_MODEL } from "../src/config.mjs";
 import { readSavedModel, restoreSavedModel } from "../src/settings.mjs";
 import { LOG_FILE } from "../src/log.mjs";
+import { which, missingMessage } from "../src/which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "../src/env.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -69,40 +70,14 @@ function statusLineArgs() {
 
 loadEnv();
 
-/**
- * Finds the Claude Code executable on PATH. Resolving it here rather than leaning on the
- * shell means arguments are passed as an array (no quoting hazard, no DEP0190 warning) and
- * a missing install produces a useful message instead of a shell error. Older npm-based
- * installs are a `.cmd` shim, which Node still refuses to run without a shell.
- */
-function resolveClaude() {
-  const win = process.platform === "win32";
-  const exts = win ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""];
-  for (const dir of (process.env.PATH ?? "").split(win ? ";" : ":")) {
-    if (!dir) continue;
-    for (const ext of exts) {
-      const file = join(dir.replace(/^"|"$/g, ""), `claude${ext}`);
-      try {
-        accessSync(file, constants.X_OK);
-        return { file, shell: /\.(cmd|bat)$/i.test(file) };
-      } catch {
-        // Not here; keep looking.
-      }
-    }
-  }
-  return null;
-}
+const resolveClaude = () => which("claude");
 
 const args = process.argv.slice(2);
 const env = { ...process.env };
 
 const claude = resolveClaude();
 if (!claude) {
-  process.stderr.write(
-    "[jev] Claude Code is not installed, or `claude` is not on your PATH.\n" +
-      "[jev] jev-claude runs the real Claude Code CLI; install it first:\n" +
-      "[jev]   https://code.claude.com/docs/en/setup\n",
-  );
+  process.stderr.write(missingMessage("claude", "Claude Code", "https://code.claude.com/docs/en/setup"));
   process.exit(1);
 }
 
@@ -126,11 +101,12 @@ if (jevKey()) {
 }
 
 // On Windows a `.cmd` shim still needs a shell; a real executable does not.
-const child = spawn(claude.file, claude.shell ? args.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : args, {
-  stdio: "inherit",
-  shell: claude.shell,
-  env,
-});
+const childArgs = [...claude.prefix, ...args];
+const child = spawn(
+  claude.file,
+  claude.shell ? childArgs.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : childArgs,
+  { stdio: "inherit", shell: claude.shell, env },
+);
 
 child.on("error", (err) => {
   process.stderr.write(`[jev] could not start Claude Code: ${err.message}\n`);
