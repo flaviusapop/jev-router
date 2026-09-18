@@ -16,6 +16,22 @@ import { log, announceServedModel } from "./log.mjs";
  */
 export const GROK_BASE_URL = "https://cli-chat-proxy.grok.com/v1";
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]"]);
+
+/**
+ * Supplier credentials are forwarded to this URL unchanged. Require TLS except for a literal
+ * loopback address used by local gateways and tests; hostnames such as `localhost` are not
+ * accepted because name resolution can be changed independently of this process.
+ */
+export function safeGrokUpstream(value) {
+  const url = new URL(value);
+  const localHTTP = url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
+  if (url.protocol !== "https:" && !localHTTP) {
+    throw new Error("Grok upstream must use HTTPS (HTTP is allowed only for 127.0.0.1 or ::1)");
+  }
+  return value;
+}
+
 /**
  * Grok tiers live in `config.mjs` alongside Claude's and Codex's, so the whole ladder is
  * visible in one table. `JEV_GROK_*_MODEL` and `JEV_GROK_*_EFFORT` override any entry.
@@ -81,8 +97,10 @@ export async function startGrokProxy({
   route = askJev,
 } = {}) {
   const states = new Map();
+  // Consecutive turns a downgrade has been refused, per conversation.
+  const streaks = new Map();
   const models = new Map();
-  const target = new URL(baseURL);
+  const target = new URL(safeGrokUpstream(baseURL));
   const transport = target.protocol === "http:" ? http : https;
   const prefix = target.pathname.replace(/\/$/, "");
 
@@ -122,9 +140,12 @@ export async function startGrokProxy({
               );
               const contextTokens = Math.round(JSON.stringify(body.input).length / 4);
               const jev = await route({ prompt, current, contextTokens, available: enabled });
-              const decision = decide({ prompt, jev, current, available: enabled, contextTokens });
+              const decision = decide({
+                prompt, jev, current, available: enabled, contextTokens, cheapStreak: streaks.get(key) ?? 0,
+              });
               tier = decision.tier;
               states.set(key, tier);
+              streaks.set(key, decision.cheapStreak);
               const spec = grokTierSpec(tier);
               const confidence = jev?.confidence == null ? "" : `, confidence ${jev.confidence.toFixed(2)}`;
               log(`grok ${key}: ${spec.model} effort=${spec.effort} (${decision.reason}${confidence})`);

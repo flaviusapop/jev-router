@@ -1,5 +1,4 @@
-// The same env-file chain the three launchers use, so this script finds the key wherever
-// they do rather than only in a project-local `.env`.
+// The same trusted env-file chain the four launchers use.
 const { loadEnv, jevKey, ENV_FILE_HINT } = await import("../src/env.mjs");
 loadEnv();
 if (!jevKey()) {

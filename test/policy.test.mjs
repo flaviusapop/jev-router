@@ -12,6 +12,8 @@ test("follows a confident Jev answer", () => {
     tier: "opus",
     reason: "jev",
     changed: true,
+    // Cleared: this turn asked to go up, so it says nothing about the session going quiet.
+    cheapStreak: 0,
   });
 });
 

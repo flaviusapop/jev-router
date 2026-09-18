@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { applyGrokTier, grokTierSpec, startGrokProxy } from "../src/grok-proxy.mjs";
+import { applyGrokTier, grokTierSpec, safeGrokUpstream, startGrokProxy } from "../src/grok-proxy.mjs";
 import { grokArgs, grokUpstream } from "../src/grok-cli.mjs";
 import {
   cleanModelsCache,
@@ -61,6 +61,15 @@ test("an existing chat proxy override becomes the upstream rather than being rep
     grokUpstream({ JEV_GROK_UPSTREAM: "https://a/v1", GROK_CLI_CHAT_PROXY_BASE_URL: "https://b/v1" }),
     "https://a/v1",
   );
+});
+
+test("Grok upstreams require TLS except on literal loopback addresses", () => {
+  assert.equal(safeGrokUpstream("https://grok.acme.com/v1"), "https://grok.acme.com/v1");
+  assert.equal(safeGrokUpstream("http://127.0.0.1:4242/v1"), "http://127.0.0.1:4242/v1");
+  assert.equal(safeGrokUpstream("http://[::1]:4242/v1"), "http://[::1]:4242/v1");
+  assert.throws(() => safeGrokUpstream("http://attacker.example/v1"), /must use HTTPS/);
+  assert.throws(() => safeGrokUpstream("http://localhost:4242/v1"), /must use HTTPS/);
+  assert.throws(() => safeGrokUpstream("ftp://grok.example/v1"), /must use HTTPS/);
 });
 
 test("registers the sentinel in Grok's config and takes it back out again", () => {

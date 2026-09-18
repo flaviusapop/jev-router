@@ -67,30 +67,50 @@ function clampToAvailable(tier, available) {
  * @param {string} input.current       tier currently active in the session
  * @param {string[]} input.available   tier names the account can run
  * @param {number} input.contextTokens approximate size of the conversation so far
- * @returns {{tier: string, reason: string, changed: boolean}}
+ * @param {number} input.cheapStreak   consecutive turns a downgrade has been refused
+ * @returns {{tier: string, reason: string, changed: boolean, cheapStreak: number}}
  */
-export function decide({ prompt, jev, current, available, contextTokens = 0 }) {
-  const settle = (tier, reason) => {
+export function decide({ prompt, jev, current, available, contextTokens = 0, cheapStreak = 0 }) {
+  // `streak` travels with the answer because `decide` holds no state of its own; the caller
+  // keeps it per conversation and hands it back next turn. Every path that is not a refused
+  // downgrade clears it, so the count only ever means "turns in a row asking to come down".
+  const settle = (tier, reason, streak = 0) => {
     const final = clampToAvailable(tier, available) ?? current;
     const why = final === tier ? reason : `${reason}+unavailable`;
-    return { tier: final, reason: final === current ? `${why}/no-change` : why, changed: final !== current };
+    return {
+      tier: final,
+      reason: final === current ? `${why}/no-change` : why,
+      changed: final !== current,
+      cheapStreak: streak,
+    };
   };
 
   const override = detectOverride(prompt);
   if (override) return settle(override, "override");
 
-  if (!jev || !TIER_NAMES.includes(jev.choice)) return settle(current, "jev-unavailable");
+  // Nothing was learned this turn, so the count is left exactly as it was.
+  if (!jev || !TIER_NAMES.includes(jev.choice)) return settle(current, "jev-unavailable", cheapStreak);
 
   let target = jev.choice;
 
   if (jev.confidence < THRESHOLDS.minConfidence) {
-    if (rankOf(target) < rankOf(current)) return settle(current, "low-confidence-no-downgrade");
+    // An uncertain answer is not evidence the session has gone quiet, but it is not evidence
+    // of hard work either, so it neither builds the streak nor breaks it.
+    if (rankOf(target) < rankOf(current)) return settle(current, "low-confidence-no-downgrade", cheapStreak);
     const ceiling = Math.max(rankOf(current), rankOf(THRESHOLDS.uncertainCeiling));
     if (rankOf(target) > ceiling) return settle(TIER_NAMES[ceiling], "low-confidence-capped");
   }
 
   if (rankOf(target) < rankOf(current) && contextTokens > THRESHOLDS.downgradeMaxContextTokens) {
-    return settle(current, "downgrade-not-worth-cache-rebuild");
+    // The rebuild is paid once; staying too high is paid every turn. One cheap turn is not
+    // worth a rebuild, but a run of them is - and without this the guard is a one-way ratchet,
+    // since nothing here ever blocks an *upgrade*. Measured 2026-09-19: one hard turn pinned a
+    // session to the top tier while Jev asked for the cheapest at 0.99, four turns running.
+    const streak = cheapStreak + 1;
+    if (streak < THRESHOLDS.downgradeAfterCheapTurns) {
+      return settle(current, `downgrade-not-worth-cache-rebuild(${streak}/${THRESHOLDS.downgradeAfterCheapTurns})`, streak);
+    }
+    return settle(target, "cheap-streak");
   }
 
   return settle(target, "jev");

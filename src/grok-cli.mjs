@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { which, missingMessage } from "./which.mjs";
 import { loadEnv, jevKey, ENV_FILE_HINT } from "./env.mjs";
 import { AUTO_MODEL } from "./config.mjs";
-import { startGrokProxy, GROK_BASE_URL } from "./grok-proxy.mjs";
+import { startGrokProxy, GROK_BASE_URL, safeGrokUpstream } from "./grok-proxy.mjs";
 import { cleanModelsCache, cleanSavedModel, registerSentinel, unregisterSentinel } from "./grok-cache.mjs";
 import { LOG_FILE, log } from "./log.mjs";
 
@@ -23,7 +23,7 @@ export const grokArgs = (args) =>
  * the proxy's upstream, so routing composes with their deployment instead of bypassing it.
  */
 export const grokUpstream = (env = process.env) =>
-  env.JEV_GROK_UPSTREAM ?? env.GROK_CLI_CHAT_PROXY_BASE_URL ?? GROK_BASE_URL;
+  safeGrokUpstream(env.JEV_GROK_UPSTREAM ?? env.GROK_CLI_CHAT_PROXY_BASE_URL ?? GROK_BASE_URL);
 
 export async function runGrok() {
   loadEnv();

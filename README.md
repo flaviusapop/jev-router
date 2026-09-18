@@ -172,7 +172,11 @@ One Jev call per user turn selects a tier. `src/policy.mjs` then applies, in ord
 - a Jev failure, timeout or unrecognised answer keeps the current model;
 - a low-confidence answer never downgrades, and caps upgrades at Sonnet;
 - a downgrade is refused once the conversation is large, since switching models invalidates
-  the prompt cache and the rebuild costs more than the downgrade saves;
+  the prompt cache and one cheap turn does not repay the rebuild - but only until Jev has
+  confidently asked for a cheaper tier three turns running, at which point a run of cheap
+  turns does repay it and the session comes down. Without that release the guard was a
+  one-way ratchet: nothing here blocks an *upgrade*, so one hard turn pinned a session to the
+  top tier for good;
 - the tier is clamped to what is enabled, stepping up rather than down, and never up into
   Fable, which bills extra usage credits.
 
@@ -202,13 +206,12 @@ main conversation.
 | `JEV_<SUPPLIER>_<TIER>_MODEL` | Override one tier's model. Supplier is `CLAUDE`, `CODEX` or `GROK`; tier is `FAST`, `BALANCED`, `STRONG` or `LONG`. |
 | `JEV_<SUPPLIER>_<TIER>_EFFORT` | Override one tier's reasoning effort, same naming. |
 | `JEV_DISABLE_TIERS` | Comma-separated tier names to take out of play, e.g. `JEV_DISABLE_TIERS=fable`. All four are on by default. |
-| `JEV_GROK_UPSTREAM` | Chat proxy the Grok router forwards to. Defaults to an existing `GROK_CLI_CHAT_PROXY_BASE_URL`, then to xAI's. |
+| `JEV_GROK_UPSTREAM` | HTTPS chat proxy the Grok router forwards to. Defaults to an existing `GROK_CLI_CHAT_PROXY_BASE_URL`, then to xAI's. Plain HTTP is accepted only on literal loopback addresses. |
 
-All three launchers read the same files, in increasing order of precedence: the real
-environment, then `~/.jev-claude.env`, then `~/.jev-router.env`, then a `.env` in the launch
-directory. Since the commands are installed globally, `~/.jev-router.env` is the usual place;
-`~/.jev-claude.env` is still read so an older setup keeps working. `TYPESAFE_API_KEY` is
-accepted anywhere `JEV_API_KEY` is.
+All four launchers read the real environment first, then fill missing values from
+`~/.jev-router.env` and the legacy `~/.jev-claude.env`. A project-local `.env` is deliberately
+not loaded: repositories are untrusted input, while these settings control destinations that
+receive credentials. `TYPESAFE_API_KEY` is accepted anywhere `JEV_API_KEY` is.
 
 ### The tier table
 
@@ -415,9 +418,9 @@ Three things the proxy has to handle, none of them documented:
 
 ```bash
 npm install
-echo "JEV_API_KEY=..." > .env
+export JEV_API_KEY=...
 
-npm test                     # 96 offline tests
+npm test                     # 139 offline tests
 node scripts/live-routing.mjs   # real Jev calls across four difficulty tiers
 node bin/jev-claude.mjs -p "what is 2+2?"
 

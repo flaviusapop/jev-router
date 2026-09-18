@@ -2,18 +2,16 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Where the key is read from, in increasing order of precedence. `process.loadEnvFile`
- * overwrites what it finds, so the last file wins: a project-local `.env` beats the
- * user-level one, which is what you want when one repository needs different settings.
+ * User-owned files that may provide router configuration. The process environment has
+ * precedence because `process.loadEnvFile` does not overwrite variables that already exist.
  *
- * All three launchers read the same list. `~/.jev-router.env` is the name the README gives
- * and the one to use; `~/.jev-claude.env` predates the other two suppliers and is still read
+ * All four launchers read the same list. `~/.jev-router.env` is the name the README gives
+ * and the one to use; `~/.jev-claude.env` predates the other launchers and is still read
  * so an existing setup keeps working.
  */
 export const ENV_FILES = () => [
-  join(homedir(), ".jev-claude.env"),
   join(homedir(), ".jev-router.env"),
-  join(process.cwd(), ".env"),
+  join(homedir(), ".jev-claude.env"),
 ];
 
 /** Where a user should be told to put the key when none was found. */

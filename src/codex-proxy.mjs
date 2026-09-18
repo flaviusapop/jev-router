@@ -104,6 +104,8 @@ export async function startCodexProxy({
   route = askJev,
 } = {}) {
   const states = new Map();
+  // Consecutive turns a downgrade has been refused, per conversation.
+  const streaks = new Map();
   const models = new Map();
 
   const server = http.createServer((req, res) => {
@@ -138,9 +140,12 @@ export async function startCodexProxy({
               const enabled = availableTiers().filter((name) => models.size === 0 || models.has(codexModelOf(name)));
               const contextTokens = Math.round(JSON.stringify(body.input).length / 4);
               const jev = await route({ prompt, current, contextTokens, available: enabled });
-              const decision = decide({ prompt, jev, current, available: enabled, contextTokens });
+              const decision = decide({
+                prompt, jev, current, available: enabled, contextTokens, cheapStreak: streaks.get(key) ?? 0,
+              });
               tier = decision.tier;
               states.set(key, tier);
+              streaks.set(key, decision.cheapStreak);
               routing = { tier, confidence: jev?.confidence ?? null, reason: decision.reason };
               debug(
                 `${key}${subagent ? " subagent" : ""} ${current} -> ${tier} ` +

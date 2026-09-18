@@ -262,8 +262,11 @@ export async function startProxy() {
               const available = availableTiers();
               const contextTokens = Math.round(JSON.stringify(body.messages).length / 4);
               const jev = await askJev({ prompt, current, contextTokens, available });
-              const { tier, reason } = decide({ prompt, jev, current, available, contextTokens });
+              const { tier, reason, cheapStreak } = decide({
+                prompt, jev, current, available, contextTokens, cheapStreak: state.cheapStreak ?? 0,
+              });
               state.tier = tier;
+              state.cheapStreak = cheapStreak;
               fresh = { confidence: jev?.confidence ?? null, reason };
               debug(
                 `${key}${subagent ? " subagent" : ""} ` +

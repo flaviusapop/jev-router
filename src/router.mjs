@@ -8,13 +8,23 @@ import { log } from "./log.mjs";
 // Built lazily because the constructor throws when no key is present, and a missing key
 // should degrade to "no routing", not stop the session from starting.
 let client;
-function getClient() {
-  client ??= new TypeSafeClient({
-    apiKey: process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY,
+export const TYPESAFE_BASE_URL = "https://api.typesafe.ai";
+
+export function createJevClient(apiKey = process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY) {
+  return new TypeSafeClient({
+    apiKey,
+    // Do not inherit TYPESAFE_BASE_URL. A classification request contains both the Jev key
+    // and the user's prompt, so its destination is a security boundary rather than ordinary
+    // SDK configuration.
+    baseURL: TYPESAFE_BASE_URL,
     timeout: THRESHOLDS.jevTimeoutMs,
     retry: { maxRetries: THRESHOLDS.jevMaxRetries, backoffInitialMs: 150, backoffMaxMs: 400 },
     logLevel: "warn", // never "debug": request bodies contain the user's prompt
   });
+}
+
+function getClient() {
+  client ??= createJevClient();
   return client;
 }
 

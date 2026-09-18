@@ -132,6 +132,13 @@ export const THRESHOLDS = {
    */
   downgradeMaxContextTokens: 20000,
   /**
+   * How many turns in a row Jev must confidently ask for a cheaper tier before the guard
+   * above gives way. The rebuild is paid once and being too high is paid every turn, so a
+   * run of cheap turns outweighs it - but a single one does not, and reacting to each turn
+   * would flap between tiers and pay for a rebuild each way.
+   */
+  downgradeAfterCheapTurns: 3,
+  /**
    * Per-attempt Jev HTTP timeout and the hard wall-clock deadline for the whole routing
    * call. Measured: ~300-350ms warm, ~900-1000ms on the first call (TLS handshake), so the
    * deadline leaves room for one retry after a cold-start timeout.
